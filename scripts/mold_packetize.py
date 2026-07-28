@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Wrap ITCH messages in MoldUDP64 packets and emit simulation vectors.
+"""Wrap ITCH messages in MoldUDP64 packets: emit simulation vectors, send over UDP, or both.
 
 Input: Nasdaq ITCH BinaryFILE, a bare sequence of [2-byte BE length][message].
+A .gz input is streamed decompressed, so the multi-GB archive needs no unpacking.
 
-Outputs into --outdir:
+Outputs into --outdir (suppress with --no-vectors):
   mold_bytes.hex    one byte per line, all emitted packets concatenated
   mold_packets.txt  per packet: <byte_offset> <byte_length> <sequence> <msg_count>
   itch_expect.hex   one byte per line, messages the deframer should emit
   itch_expect.txt   per message: <byte_offset> <byte_length> <sequence> <type_char>
+
+--send HOST:PORT transmits the same packets as UDP payloads. The OS adds
+UDP/IP/Ethernet; nothing below UDP is under our control.
 
 Sequence numbers count messages, not packets: a header carries the sequence of
 its first message. --drop exploits this -- dropped packets still consume their
@@ -17,8 +21,11 @@ sequence range, so the receiver sees a genuine gap.
 from __future__ import annotations
 
 import argparse
+import gzip
+import socket
 import struct
 import sys
+import time
 from pathlib import Path
 
 SESSION_LEN = 10
@@ -27,24 +34,33 @@ DEFAULT_MTU_PAYLOAD = 1472  # 1500 MTU - 20 IPv4 - 8 UDP
 DEFAULT_MESSAGE_LIMIT = 100_000
 
 
-def read_itch_messages(path: Path, limit: int | None):
+def open_itch(path: Path):
+    if path.suffix == ".gz":
+        return gzip.open(path, "rb")
+    return path.open("rb")
+
+
+def read_itch_messages(path: Path, limit: int | None, skip: int = 0):
     count = 0
-    with path.open("rb") as handle:
+    seen = 0
+    with open_itch(path) as handle:
         while True:
             prefix = handle.read(2)
             if not prefix:
                 return
             if len(prefix) < 2:
-                raise ValueError(f"truncated length prefix at {handle.tell() - len(prefix)}")
+                raise ValueError("truncated length prefix at end of file")
             (length,) = struct.unpack(">H", prefix)
             if length == 0:
-                raise ValueError(f"zero-length message at {handle.tell() - 2}")
+                raise ValueError(f"zero-length message after {seen} messages")
             message = handle.read(length)
             if len(message) < length:
                 raise ValueError(
-                    f"truncated message at {handle.tell() - len(message)}: "
-                    f"wanted {length}, got {len(message)}"
+                    f"truncated message after {seen}: wanted {length}, got {len(message)}"
                 )
+            seen += 1
+            if seen <= skip:
+                continue
             yield message
             count += 1
             if limit is not None and count >= limit:
@@ -92,10 +108,58 @@ def write_hex(path: Path, data: bytes) -> None:
             handle.write(f"{byte:02X}\n")
 
 
+def is_multicast(host: str) -> bool:
+    try:
+        return 224 <= int(socket.inet_aton(host)[0]) <= 239
+    except OSError:
+        return False
+
+
+def make_socket(host: str, ttl: int, iface: str | None) -> socket.socket:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if is_multicast(host):
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+        if iface:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF,
+                            socket.inet_aton(iface))
+    elif iface:
+        sock.bind((iface, 0))
+    return sock
+
+
+def send_packets(blobs: list[bytes], host: str, port: int, pps: float,
+                 ttl: int, iface: str | None) -> None:
+    sock = make_socket(host, ttl, iface)
+    interval = 1.0 / pps if pps > 0 else 0.0
+    deadline = time.perf_counter()
+    sent_bytes = 0
+    started = time.perf_counter()
+
+    try:
+        for index, blob in enumerate(blobs):
+            sock.sendto(blob, (host, port))
+            sent_bytes += len(blob)
+            if interval:
+                deadline += interval
+                remaining = deadline - time.perf_counter()
+                if remaining > 0:
+                    time.sleep(remaining)
+            if (index + 1) % 10000 == 0:
+                print(f"  sent {index + 1}/{len(blobs)} packets")
+    finally:
+        sock.close()
+
+    elapsed = max(time.perf_counter() - started, 1e-9)
+    print(f"sent      {len(blobs)} packets, {sent_bytes} payload bytes "
+          f"in {elapsed:.2f}s ({sent_bytes * 8 / elapsed / 1e6:.1f} Mbps payload)")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("input", type=Path)
     parser.add_argument("--outdir", type=Path, default=Path("tb/vectors"))
+    parser.add_argument("--no-vectors", action="store_true",
+                        help="skip writing hex vectors (they are large)")
     parser.add_argument("--session", default="TESTSESS")
     parser.add_argument("--start-seq", type=int, default=1)
     parser.add_argument("--mtu-payload", type=int, default=DEFAULT_MTU_PAYLOAD)
@@ -103,18 +167,37 @@ def main() -> int:
                         help="messages per packet; 0xFFFF is reserved for end-of-session")
     parser.add_argument("--limit", type=int, default=DEFAULT_MESSAGE_LIMIT,
                         help="stop after N messages; 0 means no limit")
+    parser.add_argument("--skip", type=int, default=0,
+                        help="discard the first N messages; the file opens with "
+                             "~220k administrative records before any order flow")
     parser.add_argument("--drop", default=None,
                         help="comma-separated packet indices to drop, creating gaps")
+    parser.add_argument("--send", default=None, metavar="HOST:PORT",
+                        help="transmit packets as UDP to this destination")
+    parser.add_argument("--pps", type=float, default=0.0,
+                        help="pace at N packets/sec; 0 sends as fast as possible")
+    parser.add_argument("--ttl", type=int, default=1,
+                        help="multicast TTL; 1 keeps traffic on the local link")
+    parser.add_argument("--iface", default=None, metavar="IP",
+                        help="source interface IP, for hosts with several NICs")
     args = parser.parse_args()
 
     if not args.input.is_file():
         print(f"error: {args.input} not found", file=sys.stderr)
         return 1
 
+    host = port = None
+    if args.send:
+        host, _, port_text = args.send.rpartition(":")
+        if not host or not port_text.isdigit():
+            print(f"error: --send wants HOST:PORT, got {args.send}", file=sys.stderr)
+            return 1
+        port = int(port_text)
+
     limit = None if args.limit == 0 else args.limit
     drops = {int(i) for i in args.drop.split(",") if i.strip()} if args.drop else set()
 
-    messages = read_itch_messages(args.input, limit)
+    messages = read_itch_messages(args.input, limit, args.skip)
     packets = group_into_packets(messages, args.mtu_payload, args.max_count, args.start_seq)
 
     unknown = {i for i in drops if i >= len(packets)}
@@ -122,15 +205,14 @@ def main() -> int:
         print(f"error: --drop names nonexistent packets: {sorted(unknown)}", file=sys.stderr)
         return 1
 
-    args.outdir.mkdir(parents=True, exist_ok=True)
-
-    stimulus, expected = bytearray(), bytearray()
+    blobs, stimulus, expected = [], bytearray(), bytearray()
     packet_lines, message_lines = [], []
 
     for index, (sequence, group) in enumerate(packets):
         if index in drops:
             continue
         blob = serialise_packet(args.session, sequence, group)
+        blobs.append(blob)
         packet_lines.append(f"{len(stimulus)} {len(blob)} {sequence} {len(group)}")
         stimulus += blob
         for offset, message in enumerate(group):
@@ -140,20 +222,30 @@ def main() -> int:
             )
             expected += message
 
-    write_hex(args.outdir / "mold_bytes.hex", bytes(stimulus))
-    write_hex(args.outdir / "itch_expect.hex", bytes(expected))
-    (args.outdir / "mold_packets.txt").write_text("\n".join(packet_lines) + "\n", newline="\n")
-    (args.outdir / "itch_expect.txt").write_text("\n".join(message_lines) + "\n", newline="\n")
-
     total = sum(len(group) for _, group in packets)
     print(f"read      {total} messages")
     print(f"packed    {len(packets)} packets "
           f"(avg {total / max(len(packets), 1):.1f} messages/packet)")
-    print(f"emitted   {len(packets) - len(drops)} packets, {len(stimulus)} stimulus bytes")
+    print(f"emitted   {len(blobs)} packets, {len(stimulus)} payload bytes")
     if drops:
         print(f"dropped   packets {sorted(drops)}")
-    print(f"expected  {len(message_lines)} messages, {len(expected)} bytes")
-    print(f"wrote     {args.outdir}/")
+
+    if not args.no_vectors:
+        args.outdir.mkdir(parents=True, exist_ok=True)
+        write_hex(args.outdir / "mold_bytes.hex", bytes(stimulus))
+        write_hex(args.outdir / "itch_expect.hex", bytes(expected))
+        (args.outdir / "mold_packets.txt").write_text(
+            "\n".join(packet_lines) + "\n", newline="\n")
+        (args.outdir / "itch_expect.txt").write_text(
+            "\n".join(message_lines) + "\n", newline="\n")
+        print(f"wrote     {args.outdir}/ ({len(message_lines)} expected messages)")
+
+    if args.send:
+        print(f"sending   to {host}:{port}"
+              f"{' (multicast)' if is_multicast(host) else ''}"
+              f"{f' at {args.pps:g} pps' if args.pps > 0 else ' unpaced'}")
+        send_packets(blobs, host, port, args.pps, args.ttl, args.iface)
+
     return 0
 
 
