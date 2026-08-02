@@ -37,23 +37,23 @@ module tb_axis_cdc_fifo;
         .rd_data  (rd_data)
     );
 
-    logic [DATA_W:0] expected_q [$];
+    logic [DATA_W+1:0] expected_q [$];
     int unsigned     errors = 0;
     int unsigned     checks = 0;
     string           phase  = "init";
 
     always @(posedge rd_clk) begin
-        logic [DATA_W:0] exp;
+        logic [DATA_W+1:0] exp;
         if (!rd_reset && rd_valid && rd_ready) begin
             if (expected_q.size() == 0) begin
-                $display("[%0t] FAIL (%s): word out of the FIFO with nothing expected: last=%0b data=%08h",
-                         $time, phase, rd_last, rd_data);
+                $display("[%0t] FAIL (%s): word out of the FIFO with nothing expected: last=%0b fcs_ok=%0b data=%08h",
+                         $time, phase, rd_last, rd_fcs_ok, rd_data);
                 errors++;
             end else begin
                 exp = expected_q.pop_front();
-                if ({rd_last, rd_data} !== exp) begin
-                    $display("[%0t] FAIL (%s): expected last=%0b data=%08h, got last=%0b data=%08h",
-                             $time, phase, exp[DATA_W], exp[DATA_W-1:0], rd_last, rd_data);
+                if ({rd_last, rd_fcs_ok, rd_data} !== exp) begin
+                    $display("[%0t] FAIL (%s): expected last=%0b fcs_ok=%0b data=%08h, got last=%0b fcs_ok=%0b data=%08h",
+                             $time, phase, exp[DATA_W+1], exp[DATA_W], exp[DATA_W-1:0], rd_last, rd_fcs_ok, rd_data);
                     errors++;
                 end
                 checks++;
@@ -90,7 +90,7 @@ module tb_axis_cdc_fifo;
                 #STEP;
             end
             #STEP;
-            if (expect_commit) expected_q.push_back({l, d});
+            if (expect_commit) expected_q.push_back({l, good, d});
         end
         wr_valid  = 1'b0;
         wr_last   = 1'b0;
@@ -109,10 +109,6 @@ module tb_axis_cdc_fifo;
             errors++;
             expected_q.delete();
         end
-    endtask
-
-    task automatic expect_quiet(input int ncycles);
-        repeat (ncycles) @(posedge rd_clk);
     endtask
 
     task automatic check(input bit condition, input string what);
@@ -151,22 +147,19 @@ module tb_axis_cdc_fifo;
         wait_drained(4000);
         check(!overflow, "overflow set during normal traffic");
 
-        phase = "bad FCS frame is dropped";
-        send_frame(6, 1'b0, 1'b0);
-        expect_quiet(200);
-        check(expected_q.size() == 0, "scoreboard not empty after a dropped frame");
+        phase = "bad FCS frame is forwarded";
+        send_frame(6, 1'b0, 1'b1);
+        wait_drained(2000);
 
-        phase = "good frame after a dropped one";
+        phase = "good frame after a bad one";
         send_frame(5, 1'b1, 1'b1);
         wait_drained(2000);
 
         phase = "oversized frame";
-        send_frame(DEPTH + 8, 1'b1, 1'b0);
-        expect_quiet(300);
-        check(expected_q.size() == 0, "scoreboard not empty after an oversized frame");
-        check(overflow, "overflow NOT set after a frame longer than DEPTH");
+        send_frame(DEPTH + 8, 1'b1, 1'b1);
+        wait_drained(4000);
 
-        phase = "recovery after overflow";
+        phase = "frame after oversized frame";
         send_frame(4, 1'b1, 1'b1);
         wait_drained(2000);
 
