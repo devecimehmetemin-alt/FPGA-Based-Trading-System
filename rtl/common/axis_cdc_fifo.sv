@@ -1,6 +1,7 @@
 module axis_cdc_fifo #(
     parameter int ADDR_W = 9,
-    parameter int DATA_W = 32
+    parameter int DATA_W = 32,
+    localparam int KEEP_W = DATA_W/8
 )(
     input logic wr_clk,
     input logic wr_reset,
@@ -8,6 +9,7 @@ module axis_cdc_fifo #(
     input logic wr_last,
     input logic wr_fcs_ok,
     input logic [DATA_W-1:0] wr_data,
+    input logic [KEEP_W-1:0] wr_keep,
     output logic wr_ready,
     output logic overflow,
 
@@ -17,12 +19,13 @@ module axis_cdc_fifo #(
     output logic rd_valid,
     output logic rd_last,
     output logic rd_fcs_ok,
+    output logic [KEEP_W-1:0] rd_keep,
     output logic [DATA_W-1:0] rd_data
 );
 
     localparam int DEPTH = 1 << ADDR_W;
 
-    logic [DATA_W+1:0] mem [DEPTH];
+    logic [DATA_W+KEEP_W+1:0] mem [DEPTH];
 
     logic [ADDR_W:0] b_wptr, b_rptr;
     logic [ADDR_W:0] g_wptr, g_wptr_sync, g_rptr, g_rptr_sync;
@@ -30,11 +33,11 @@ module axis_cdc_fifo #(
 
     assign rd_valid = ~empty;
 
-    assign {rd_last, rd_fcs_ok, rd_data} = mem[b_rptr[ADDR_W-1:0]];
+    assign {rd_last, rd_fcs_ok, rd_keep, rd_data} = mem[b_rptr[ADDR_W-1:0]];
 
     always_ff @(posedge wr_clk) begin
         if (wr_valid & wr_ready)
-            mem[b_wptr[ADDR_W-1:0]] <= {wr_last, wr_fcs_ok, wr_data};
+            mem[b_wptr[ADDR_W-1:0]] <= {wr_last, wr_fcs_ok, wr_keep, wr_data};
     end
 
     wptr_handler #(.ADDR_W(ADDR_W)) u_wptr_handler (
