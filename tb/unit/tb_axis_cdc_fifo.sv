@@ -5,6 +5,7 @@ module tb_axis_cdc_fifo;
 
     localparam int  ADDR_W = 5;
     localparam int  DATA_W = 32;
+    localparam int  KEEP_W = DATA_W/8;
     localparam int  DEPTH  = 1 << ADDR_W;
     localparam time STEP   = 1ns;
 
@@ -16,7 +17,9 @@ module tb_axis_cdc_fifo;
     logic              wr_reset, rd_reset;
     logic              wr_valid, wr_last, wr_fcs_ok, wr_ready, overflow;
     logic [DATA_W-1:0] wr_data;
+    logic [KEEP_W-1:0] wr_keep;
     logic              rd_ready, rd_valid, rd_last, rd_fcs_ok;
+    logic [KEEP_W-1:0] rd_keep;
     logic [DATA_W-1:0] rd_data;
 
     axis_cdc_fifo #(.ADDR_W(ADDR_W), .DATA_W(DATA_W)) dut (
@@ -26,6 +29,7 @@ module tb_axis_cdc_fifo;
         .wr_last  (wr_last),
         .wr_fcs_ok(wr_fcs_ok),
         .wr_data  (wr_data),
+        .wr_keep  (wr_keep),
         .wr_ready (wr_ready),
         .overflow (overflow),
         .rd_clk   (rd_clk),
@@ -34,26 +38,27 @@ module tb_axis_cdc_fifo;
         .rd_valid (rd_valid),
         .rd_last  (rd_last),
         .rd_fcs_ok(rd_fcs_ok),
+        .rd_keep  (rd_keep),
         .rd_data  (rd_data)
     );
 
-    logic [DATA_W+1:0] expected_q [$];
+    logic [DATA_W+KEEP_W+1:0] expected_q [$];
     int unsigned     errors = 0;
     int unsigned     checks = 0;
     string           phase  = "init";
 
     always @(posedge rd_clk) begin
-        logic [DATA_W+1:0] exp;
+        logic [DATA_W+KEEP_W+1:0] exp;
         if (!rd_reset && rd_valid && rd_ready) begin
             if (expected_q.size() == 0) begin
-                $display("[%0t] FAIL (%s): word out of the FIFO with nothing expected: last=%0b fcs_ok=%0b data=%08h",
-                         $time, phase, rd_last, rd_fcs_ok, rd_data);
+                $display("[%0t] FAIL (%s): word out of the FIFO with nothing expected: last=%0b fcs_ok=%0b keep=%04b data=%08h",
+                         $time, phase, rd_last, rd_fcs_ok, rd_keep, rd_data);
                 errors++;
             end else begin
                 exp = expected_q.pop_front();
-                if ({rd_last, rd_fcs_ok, rd_data} !== exp) begin
-                    $display("[%0t] FAIL (%s): expected last=%0b fcs_ok=%0b data=%08h, got last=%0b fcs_ok=%0b data=%08h",
-                             $time, phase, exp[DATA_W+1], exp[DATA_W], exp[DATA_W-1:0], rd_last, rd_fcs_ok, rd_data);
+                if ({rd_last, rd_fcs_ok, rd_keep, rd_data} !== exp) begin
+                    $display("[%0t] FAIL (%s): expected last=%0b fcs_ok=%0b keep=%04b data=%08h, got last=%0b fcs_ok=%0b keep=%04b data=%08h",
+                             $time, phase, exp[DATA_W+KEEP_W+1], exp[DATA_W+KEEP_W], exp[DATA_W+KEEP_W-1:DATA_W], exp[DATA_W-1:0], rd_last, rd_fcs_ok, rd_keep, rd_data);
                     errors++;
                 end
                 checks++;
@@ -74,14 +79,17 @@ module tb_axis_cdc_fifo;
 
     task automatic send_frame(input int nwords, input bit good, input bit expect_commit);
         logic [DATA_W-1:0] d;
+        logic [KEEP_W-1:0] k;
         logic              l;
         @(posedge wr_clk);
         #STEP;
         for (int i = 0; i < nwords; i++) begin
             d = $urandom;
             l = (i == nwords - 1);
+            k = l ? ({KEEP_W{1'b1}} >> $urandom_range(0, KEEP_W-1)) : {KEEP_W{1'b1}};
             wr_valid  = 1'b1;
             wr_data   = d;
+            wr_keep   = k;
             wr_last   = l;
             wr_fcs_ok = good;
             forever begin
@@ -90,7 +98,7 @@ module tb_axis_cdc_fifo;
                 #STEP;
             end
             #STEP;
-            if (expect_commit) expected_q.push_back({l, good, d});
+            if (expect_commit) expected_q.push_back({l, good, k, d});
         end
         wr_valid  = 1'b0;
         wr_last   = 1'b0;
@@ -126,6 +134,7 @@ module tb_axis_cdc_fifo;
         rd_reset  = 1'b1;
         wr_valid  = 1'b0;
         wr_data   = '0;
+        wr_keep   = '0;
         wr_last   = 1'b0;
         wr_fcs_ok = 1'b0;
 
