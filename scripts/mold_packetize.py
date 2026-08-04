@@ -7,8 +7,17 @@ A .gz input is streamed decompressed, so the multi-GB archive needs no unpacking
 Outputs into --outdir (suppress with --no-vectors):
   mold_bytes.hex    one byte per line, all emitted packets concatenated
   mold_packets.txt  per packet: <byte_offset> <byte_length> <sequence> <msg_count>
+  mold_beats.hex    one 32-bit AXI-Stream beat per line, for $readmemh
   itch_expect.hex   one byte per line, messages the deframer should emit
   itch_expect.txt   per message: <byte_offset> <byte_length> <sequence> <type_char>
+
+A mold_beats.hex line is 10 hex digits holding {2'b00, 1'b0, last, keep[3:0],
+data[31:0]} -- read it into a logic [39:0] array. Bytes pack little-endian
+within a beat, so packet byte 0 lands in data[7:0], and last is set on the
+final beat of every packet. Bit 37 is where eth_beats.hex carries fcs_ok; it is
+always zero here, so compare bits [36:0]. This is byte for byte what
+header_strip emits from the frames eth_encapsulate.py builds around these
+packets, which makes it that module's expected output as well.
 
 --send HOST:PORT transmits the same packets as UDP payloads. The OS adds
 UDP/IP/Ethernet; nothing below UDP is under our control.
@@ -106,6 +115,23 @@ def write_hex(path: Path, data: bytes) -> None:
     with path.open("w", newline="\n") as handle:
         for byte in data:
             handle.write(f"{byte:02X}\n")
+
+
+def pack_beats(data: bytes) -> list[int]:
+    beats = []
+    for start in range(0, len(data), 4):
+        chunk = data[start:start + 4]
+        word = int.from_bytes(chunk.ljust(4, b"\x00"), "little")
+        last = start + len(chunk) >= len(data)
+        keep = (1 << len(chunk)) - 1
+        beats.append((last << 36) | (keep << 32) | word)
+    return beats
+
+
+def write_beats(path: Path, beats: list[int]) -> None:
+    with path.open("w", newline="\n") as handle:
+        for beat in beats:
+            handle.write(f"{beat:010X}\n")
 
 
 def is_multicast(host: str) -> bool:
@@ -207,6 +233,7 @@ def main() -> int:
 
     blobs, stimulus, expected = [], bytearray(), bytearray()
     packet_lines, message_lines = [], []
+    beats = []
 
     for index, (sequence, group) in enumerate(packets):
         if index in drops:
@@ -215,6 +242,7 @@ def main() -> int:
         blobs.append(blob)
         packet_lines.append(f"{len(stimulus)} {len(blob)} {sequence} {len(group)}")
         stimulus += blob
+        beats += pack_beats(blob)
         for offset, message in enumerate(group):
             kind = chr(message[0]) if 32 <= message[0] < 127 else "?"
             message_lines.append(
@@ -233,12 +261,14 @@ def main() -> int:
     if not args.no_vectors:
         args.outdir.mkdir(parents=True, exist_ok=True)
         write_hex(args.outdir / "mold_bytes.hex", bytes(stimulus))
+        write_beats(args.outdir / "mold_beats.hex", beats)
         write_hex(args.outdir / "itch_expect.hex", bytes(expected))
         (args.outdir / "mold_packets.txt").write_text(
             "\n".join(packet_lines) + "\n", newline="\n")
         (args.outdir / "itch_expect.txt").write_text(
             "\n".join(message_lines) + "\n", newline="\n")
-        print(f"wrote     {args.outdir}/ ({len(message_lines)} expected messages)")
+        print(f"wrote     {args.outdir}/ ({len(message_lines)} expected messages, "
+              f"{len(beats)} beats)")
 
     if args.send:
         print(f"sending   to {host}:{port}"
