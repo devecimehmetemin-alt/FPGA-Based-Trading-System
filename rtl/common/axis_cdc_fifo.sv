@@ -172,10 +172,10 @@ module synchroniser #(
     input logic clk,
     input logic reset,
     input logic [W-1:0] in,
-    output logic [W-1:0] synced
+    (* ASYNC_REG = "TRUE" *) output logic [W-1:0] synced
 );
 
-    logic [W-1:0] d1;
+    (* ASYNC_REG = "TRUE" *) logic [W-1:0] d1;
 
     always_ff @(posedge clk) begin
         if (reset) begin
