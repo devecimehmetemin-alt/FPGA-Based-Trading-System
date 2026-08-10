@@ -1,6 +1,6 @@
 module axis_cdc_fifo #(
     parameter int ADDR_W = 9,
-    parameter int DATA_W = 32,
+    parameter int DATA_W = 64,
     localparam int KEEP_W = DATA_W/8
 )(
     input logic wr_clk,

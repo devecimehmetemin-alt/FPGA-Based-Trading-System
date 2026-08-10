@@ -8,13 +8,13 @@ module header_strip #(
     input wire logic clk,
     input wire logic rst,
     input wire logic in_valid,
-    input wire logic [31:0] in_data,
-    input wire logic [3:0] in_keep,
+    input wire logic [63:0] in_data,
+    input wire logic [7:0] in_keep,
     input wire logic in_last,
     input wire logic in_fcs_ok,
     output logic out_valid,
-    output logic [31:0] out_data,
-    output logic [3:0] out_keep,
+    output logic [63:0] out_data,
+    output logic [7:0] out_keep,
     output logic out_last,
     output logic out_fcs_ok,
     output logic drop_pulse
@@ -28,38 +28,46 @@ module header_strip #(
     localparam logic [15:0] IP_A = {MCAST_IP[23:16], MCAST_IP[31:24]};
     localparam logic [15:0] IP_B = {MCAST_IP[7:0], MCAST_IP[15:8]};
     localparam logic [15:0] PORT_W = {FEED_PORT[7:0], FEED_PORT[15:8]};
-    localparam int W_LOAD = 10;
-    localparam int W_FORWARD = 11;
+    localparam int W_LOAD = 5;
+    localparam int W_FORWARD = 6;
 
-    function automatic logic [2:0] keep_to_n(input logic [3:0] k);
+    function automatic logic [3:0] keep_to_n(input logic [7:0] k);
         case (k)
-            4'b0001: keep_to_n = 3'd1;
-            4'b0011: keep_to_n = 3'd2;
-            4'b0111: keep_to_n = 3'd3;
-            default: keep_to_n = 3'd4;
+            8'b00000001: keep_to_n = 4'd1;
+            8'b00000011: keep_to_n = 4'd2;
+            8'b00000111: keep_to_n = 4'd3;
+            8'b00001111: keep_to_n = 4'd4;
+            8'b00011111: keep_to_n = 4'd5;
+            8'b00111111: keep_to_n = 4'd6;
+            8'b01111111: keep_to_n = 4'd7;
+            default: keep_to_n = 4'd8;
         endcase
     endfunction
 
-    function automatic logic [3:0] n_to_keep(input logic [2:0] n);
+    function automatic logic [7:0] n_to_keep(input logic [3:0] n);
         case (n)
-            3'd1: n_to_keep = 4'b0001;
-            3'd2: n_to_keep = 4'b0011;
-            3'd3: n_to_keep = 4'b0111;
-            default: n_to_keep = 4'b1111;
+            4'd1: n_to_keep = 8'b00000001;
+            4'd2: n_to_keep = 8'b00000011;
+            4'd3: n_to_keep = 8'b00000111;
+            4'd4: n_to_keep = 8'b00001111;
+            4'd5: n_to_keep = 8'b00011111;
+            4'd6: n_to_keep = 8'b00111111;
+            4'd7: n_to_keep = 8'b01111111;
+            default: n_to_keep = 8'b11111111;
         endcase
     endfunction
 
     logic [4:0] wcnt;
     logic accept;
     logic ip_part;
-    logic [31:0] prev;
+    logic [63:0] prev;
     logic flush;
-    logic [2:0] flush_bytes;
+    logic [3:0] flush_bytes;
     logic flush_fcs;
-    logic [2:0] n_in, avail;
+    logic [3:0] n_in, avail;
 
     assign n_in = keep_to_n(in_keep);
-    assign avail = 3'd2 + n_in;
+    assign avail = 4'd6 + n_in;
     assign drop_pulse = in_valid & in_last & ~accept;
 
     always_ff @(posedge clk) begin
@@ -70,20 +78,24 @@ module header_strip #(
             prev <= in_data;
 
             case (wcnt)
-                5'd0: if (in_data != MAC_W0) accept <= 1'b0;
-                5'd1: if (in_data[15:0] != MAC_W1) accept <= 1'b0;
-                5'd3: begin
-                    if (in_data[15:0] != ETYPE_W) accept <= 1'b0;
-                    if (in_data[23:16] != VER_IHL) accept <= 1'b0;
+                5'd0: begin
+                    if (in_data[31:0] != MAC_W0) accept <= 1'b0;
+                    if (in_data[47:32] != MAC_W1) accept <= 1'b0;
                 end
-                5'd5: begin
-                    if ((in_data[7:0] & 8'h3F) != 8'h00) accept <= 1'b0;
-                    if (in_data[15:8] != 8'h00) accept <= 1'b0;
-                    if (in_data[31:24] != PROTO) accept <= 1'b0;
+                5'd1: begin
+                    if (in_data[47:32] != ETYPE_W) accept <= 1'b0;
+                    if (in_data[55:48] != VER_IHL) accept <= 1'b0;
                 end
-                5'd7: ip_part <= (in_data[31:16] == IP_A);
-                5'd8: if (!(ip_part && in_data[15:0] == IP_B)) accept <= 1'b0;
-                5'd9: if (in_data[15:0] != PORT_W) accept <= 1'b0;
+                5'd2: begin
+                    if ((in_data[39:32] & 8'h3F) != 8'h00) accept <= 1'b0;
+                    if (in_data[47:40] != 8'h00) accept <= 1'b0;
+                    if (in_data[63:56] != PROTO) accept <= 1'b0;
+                end
+                5'd3: ip_part <= (in_data[63:48] == IP_A);
+                5'd4: begin
+                    if (!(ip_part && in_data[15:0] == IP_B)) accept <= 1'b0;
+                    if (in_data[47:32] != PORT_W) accept <= 1'b0;
+                end
                 default: ;
             endcase
 
@@ -101,9 +113,9 @@ module header_strip #(
             flush <= 1'b0;
         end else begin
             flush <= 1'b0;
-            if (in_valid & accept & in_last & (wcnt >= W_FORWARD) & (avail > 3'd4)) begin
+            if (in_valid & accept & in_last & (wcnt >= W_FORWARD) & (avail > 4'd8)) begin
                 flush <= 1'b1;
-                flush_bytes <= avail - 3'd4;
+                flush_bytes <= avail - 4'd8;
                 flush_fcs <= in_fcs_ok;
             end
         end
@@ -111,29 +123,29 @@ module header_strip #(
 
     always_comb begin
         out_valid = 1'b0;
-        out_data = {in_data[15:0], prev[31:16]};
-        out_keep = 4'b1111;
+        out_data = {in_data[15:0], prev[63:16]};
+        out_keep = 8'b11111111;
         out_last = 1'b0;
         out_fcs_ok = in_fcs_ok;
 
         if (flush) begin
             out_valid = 1'b1;
-            out_data = {16'h0, prev[31:16]};
+            out_data = {16'h0, prev[63:16]};
             out_keep = n_to_keep(flush_bytes);
             out_last = 1'b1;
             out_fcs_ok = flush_fcs;
         end
         else if (in_valid & accept) begin
             if ((wcnt == W_LOAD) & in_last) begin
-                if (n_in > 3'd2) begin
+                if (n_in > 4'd2) begin
                     out_valid = 1'b1;
-                    out_data = {16'h0, in_data[31:16]};
-                    out_keep = n_to_keep(n_in - 3'd2);
+                    out_data = {16'h0, in_data[63:16]};
+                    out_keep = n_to_keep(n_in - 4'd2);
                     out_last = 1'b1;
                 end
             end else if (wcnt >= W_FORWARD) begin
                 out_valid = 1'b1;
-                if (in_last & (avail <= 3'd4)) begin
+                if (in_last & (avail <= 4'd8)) begin
                     out_keep = n_to_keep(avail);
                     out_last = 1'b1;
                 end

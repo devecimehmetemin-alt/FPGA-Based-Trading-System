@@ -13,13 +13,13 @@ Outputs into --outdir:
   eth_bytes.hex     one byte per line, all emitted frames concatenated
   eth_frames.txt    per frame: <frame_offset> <frame_len> <payload_offset>
                     <payload_len> <sequence> <msg_count> <fcs_state>
-  eth_beats.hex     one 32-bit AXI-Stream beat per line, for $readmemh
+  eth_beats.hex     one 64-bit AXI-Stream beat per line, for $readmemh
 
 payload_offset is relative to the start of the frame, so a testbench can check
 the deframer's output against mold_bytes.hex without recomputing header sizes.
 
-An eth_beats.hex line is 10 hex digits holding {2'b00, fcs_ok, last, keep[3:0],
-data[31:0]} -- read it into a logic [39:0] array and replay one line per beat.
+An eth_beats.hex line is 20 hex digits holding {6'b0, fcs_ok, last, keep[7:0],
+data[63:0]} -- read it into a logic [79:0] array and replay one line per beat.
 Bytes pack little-endian within a beat, so frame byte 0 lands in data[7:0] and
 beat 0 carries the destination MAC. These beats are what a MAC hands to
 header_strip: the preamble and the FCS are never in them, --preamble and
@@ -172,19 +172,19 @@ def write_hex(path: Path, data: bytes) -> None:
 
 def pack_beats(data: bytes, fcs_ok: bool) -> list[int]:
     beats = []
-    for start in range(0, len(data), 4):
-        chunk = data[start:start + 4]
-        word = int.from_bytes(chunk.ljust(4, b"\x00"), "little")
+    for start in range(0, len(data), 8):
+        chunk = data[start:start + 8]
+        word = int.from_bytes(chunk.ljust(8, b"\x00"), "little")
         last = start + len(chunk) >= len(data)
         keep = (1 << len(chunk)) - 1
-        beats.append((int(fcs_ok) << 37) | (last << 36) | (keep << 32) | word)
+        beats.append((int(fcs_ok) << 73) | (last << 72) | (keep << 64) | word)
     return beats
 
 
 def write_beats(path: Path, beats: list[int]) -> None:
     with path.open("w", newline="\n") as handle:
         for beat in beats:
-            handle.write(f"{beat:010X}\n")
+            handle.write(f"{beat:020X}\n")
 
 
 def main() -> int:
@@ -293,7 +293,7 @@ def main() -> int:
           f"{dst_ip}:{args.dst_port} ({':'.join(f'{b:02x}' for b in dst_mac)})")
     print(f"emitted   {len(wire)} wire bytes "
           f"({len(wire) - payload_bytes} bytes of overhead)")
-    print(f"beats     {len(beats)} 32-bit beats, preamble and FCS excluded")
+    print(f"beats     {len(beats)} 64-bit beats, preamble and FCS excluded")
     if corrupt:
         print(f"corrupted FCS on frames {sorted(corrupt)}")
     if padding:

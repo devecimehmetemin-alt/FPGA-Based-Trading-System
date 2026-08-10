@@ -1,142 +1,177 @@
 `default_nettype none
 
-module mold_deframe (
+module mold_deframe #(
+    parameter int IN_BYTES = 8
+) (
     input wire logic clk,
     input wire logic rst,
-    input wire logic in_valid,            
-    input wire logic [31:0] in_data,        
-    input wire logic [3:0] in_keep,         
-    input wire logic in_last,               
+    input wire logic in_valid,
+    input wire logic [8*IN_BYTES-1:0] in_data,
+    input wire logic [IN_BYTES-1:0] in_keep,
+    input wire logic in_last,
     input wire logic in_fcs_ok,
-    output logic msg_valid,               
-    output logic [31:0] msg_data,          
-    output logic [3:0] msg_keep,      
-    output logic msg_start,                 
-    output logic msg_last,                  
+    output logic msg_valid,
+    output logic [16*IN_BYTES-1:0] msg_data,
+    output logic [2*IN_BYTES-1:0] msg_keep,
+    output logic msg_start,
+    output logic msg_last,
     output logic [15:0] msg_len, // message length is 2 bytes
     output logic [63:0] msg_seq, // message sequence is 8 bytes
     output logic pkt_bad // in_fcs_ok = 0
 );
 
-    typedef enum logic [1:0] {S_HDR, S_LEN, S_BODY} state_t;
     // MoldUDP64: session[10] seq[8] count[2] then count x { len[2] body[len] }
 
-    // clocked and combinational
-    state_t state, st_n;                    
-    logic [15:0] left, left_n; // bytes left in a state
-    logic [15:0] len, len_n; // length of the message being emitted
-    logic [63:0] seq, seq_n; // sequence of the current message
-    logic [31:0] stage, stage_n; // output beat being filled up, 4 bytes
-    logic [2:0] fill, fill_n; // bytes position already filled
-    logic first, first_n; // msg_start
+    localparam int LANES = IN_BYTES;
+    localparam int LANE_W = $clog2(LANES);
+    localparam int CNT_W = $clog2(LANES + 1);
+    localparam int BEAT_W = 16 - LANE_W;
+    localparam int STAGE_W = 8 * (LANES - 1);
+    localparam int MSG_W = 16 * LANES;
+    localparam logic [CNT_W-1:0] ALL_LANES = CNT_W'(LANES);
+    localparam logic [BEAT_W-1:0] HDR_BEATS = BEAT_W'((20 - 1) / LANES);
+    localparam logic [CNT_W-1:0] HDR_TAIL = CNT_W'(((20 - 1) % LANES) + 1);
+    localparam logic HDR_ENDS = (HDR_BEATS == 0);
+    localparam logic [CNT_W-1:0] HDR_LANES = HDR_ENDS ? HDR_TAIL : ALL_LANES;
+    localparam logic [2*LANES-1:0] KEEP_ONES = {(2*LANES){1'b1}};
 
-    function automatic logic [3:0] n_to_keep(input logic [2:0] n);
-        case (n)                          
-            3'd1: n_to_keep = 4'b0001;
-            3'd2: n_to_keep = 4'b0011;
-            3'd3: n_to_keep = 4'b0111;
-            default: n_to_keep = 4'b1111;
-        endcase
-    endfunction
+    logic [CNT_W-1:0] run_lanes, run_lanes_next; // lanes of this beat inside the current run
+    logic [CNT_W-1:0] tail_lanes, tail_lanes_next; // lanes the run's final beat will carry
+    logic [CNT_W-1:0] stage_bytes, stage_bytes_next; // bytes held in stage from the previous beat
+    logic [BEAT_W-1:0] beats_left, beats_left_next; // beats of the run left after this one
+    logic run_ends, run_ends_next; // the run finishes inside this beat
+    logic in_hdr, in_hdr_next; // the run is the 20-byte header
+    logic len_split, len_split_next; // the length high byte was the last lane
+    logic msg_first, msg_first_next; // msg_start
+    logic [7:0] len_high, len_high_next;
+    logic [STAGE_W-1:0] stage, stage_next;
+    logic [15:0] len, len_next;
+    logic [63:0] seq, seq_next;
+    logic [2:0] hdr_beat, hdr_beat_next;
 
-    assign pkt_bad = in_valid & in_last & ~in_fcs_ok;   
+    assign pkt_bad = in_valid & in_last & ~in_fcs_ok;
 
     always_comb begin
-        logic [7:0] b; // the byte this loop iteration is processing
+        logic [CNT_W-1:0] skip_bytes, lead_bytes;
+        logic [LANE_W-1:0] tail_low;
+        logic borrow, len_ready, last_beat;
+        logic [2*LANES-1:0] keep_mask;
+        logic [15:0] len_bytes;
+        logic [15:0] next_len;
 
-        st_n = state; // default everything to unchanged
-        len_n = len;
-        left_n = left; 
-        seq_n = seq;
-        stage_n = stage;
-        fill_n = fill;
-        first_n = first;
-        msg_valid = 1'b0; 
-        msg_data = 32'd0;
-        msg_keep = 4'b1111;
-        msg_start = 1'b0;
-        msg_last = 1'b0;
+        msg_valid = in_valid & ~in_hdr & (run_lanes != '0);
+        msg_last = msg_valid & run_ends;
+        msg_start = msg_valid & msg_first;
         msg_len = len;
         msg_seq = seq;
+        msg_data = (MSG_W'(in_data) << (8 * stage_bytes)) | MSG_W'(stage); // residue first, then
+        keep_mask = ((((2*LANES)'(in_keep)) & ~(KEEP_ONES << run_lanes)) << stage_bytes)
+                  | ~(KEEP_ONES << stage_bytes); // this beat's own bytes
+        msg_keep = {(2*LANES){msg_valid}} & keep_mask;
+
+        skip_bytes = len_split ? ALL_LANES : (ALL_LANES - 1 - run_lanes); // length bytes still to come
+        lead_bytes = skip_bytes - 1; // bytes of the next run that land in this beat
+        len_ready = run_ends & (len_split | (run_lanes <= ALL_LANES - 2));
+        last_beat = (beats_left == 1);
+
+        len_bytes = 16'(in_data >> (8 * run_lanes));
+        next_len = len_split ? {len_high, in_data[7:0]} : {len_bytes[7:0], len_bytes[15:8]};
+
+        // next_len - lead_bytes bytes start next beat, so the run spans (rem-1)/LANES + 1
+        // beats and its last beat carries (rem-1)%LANES + 1 of them. LANES is a power of
+        // two, so both are slices of next_len - skip_bytes and only LANE_W bits subtract.
+        tail_low = next_len[LANE_W-1:0] - skip_bytes[LANE_W-1:0];
+        borrow = {1'b0, next_len[LANE_W-1:0]} < skip_bytes;
+
+        run_lanes_next = run_lanes; // default everything to unchanged
+        tail_lanes_next = tail_lanes;
+        beats_left_next = beats_left;
+        run_ends_next = run_ends;
+        in_hdr_next = in_hdr;
+        len_split_next = len_split;
+        len_high_next = len_high;
+        stage_bytes_next = stage_bytes;
+        stage_next = stage;
+        len_next = len;
+        seq_next = seq;
+        msg_first_next = msg_first;
+        hdr_beat_next = hdr_beat;
 
         if (in_valid) begin
-            for (int i = 0; i < 4; i++) begin 
-                if (in_keep[i]) begin // skip unused lanes on the final beat
-                    b = in_data[8*i +: 8]; // i = 0: b = in_data[7:0], etc
-                    case (st_n)                     // st_n, not state: byte 1 sees byte 0's work
-                        S_HDR: begin
-                            if (left_n <= 16'd10 && left_n >= 16'd3) seq_n = {seq_n[55:0], b}; // 8 big-endian seq bytes
-                            // header byte k is seen while left_n == 20-k, so the 8 sequence
-                            // bytes (10..17) are left_n 10 down to 3.
-                            left_n = left_n - 16'd1;
-                            if (left_n == 16'd0) begin
-                                st_n = S_LEN;
-                                left_n = 16'd2; // next field is a 2-byte length
-                            end
-                        end
-                        S_LEN: begin
-                            len_n = {len_n[7:0], b}; 
-                            left_n = left_n - 16'd1;
-                            if (left_n == 16'd0) begin
-                                st_n = S_BODY;
-                                left_n = len_n; // body is len bytes
-                                fill_n = 3'd0;  // start gathering at lane 0 
-                                stage_n = 32'd0; // realignment
-                                first_n = 1'b1;
-                            end
-                        end
-                        S_BODY: begin
-                            stage_n[8*fill_n +: 8] = b; // drop the byte into the next
-                            fill_n = fill_n + 3'd1;         // free lane of the output beat
-                            left_n = left_n - 16'd1;
-                            if (fill_n == 3'd4 || left_n == 16'd0) begin
-                                // emit when the beat is full, or the message ran out
-                                msg_valid = 1'b1;
-                                msg_data = stage_n;
-                                msg_keep = n_to_keep(fill_n); // partial beat is partial keep
-                                msg_start = first_n;
-                                msg_last = (left_n == 16'd0);
-                                msg_len = len_n;
-                                msg_seq = seq_n; // read before the increment below
-                                first_n = 1'b0;
-                                fill_n = 3'd0;
-                                stage_n = 32'd0; // reset stage for next beat
-                                                                
-                                if (left_n == 16'd0) begin
-                                    seq_n = seq_n + 64'd1; // sequence number increased by 1 each message
-                                    st_n = S_LEN; // assume another message follows, if not in_last guard resets to header
-                                    left_n = 16'd2;
-                                end
-                            end
-                        end
-                        default: st_n = S_HDR;
-                    endcase
+            for (int k = 0; k < 8; k++) // the 8 sequence bytes sit at fixed
+                if (in_hdr && hdr_beat == 3'((10 + k) / LANES)) // lanes of fixed header beats
+                    seq_next[8*(7 - k) +: 8] = in_data[8*((10 + k) % LANES) +: 8];
+            if (in_hdr) hdr_beat_next = hdr_beat + 3'd1;
+            if (msg_valid) msg_first_next = 1'b0;
+            stage_bytes_next = '0;
+            stage_next = '0;
+
+            if (!run_ends) begin
+                beats_left_next = beats_left - 1'b1;
+                run_ends_next = last_beat;
+                run_lanes_next = last_beat ? tail_lanes : ALL_LANES;
+            end else begin
+                if (msg_last) seq_next = seq + 64'd1;
+                in_hdr_next = 1'b0;
+                msg_first_next = 1'b1;
+                len_split_next = 1'b0;
+                beats_left_next = '0;
+                run_ends_next = 1'b1;
+                run_lanes_next = '0;
+                if (len_ready) begin
+                    len_next = next_len;
+                    stage_bytes_next = lead_bytes;
+                    stage_next = STAGE_W'(in_data >> (8 * (LANES - int'(lead_bytes))));
+                    tail_lanes_next = CNT_W'(tail_low) + 1'b1;
+                    beats_left_next = next_len[15:LANE_W] - BEAT_W'(borrow);
+                    run_ends_next = (next_len[15:LANE_W+1] == '0) & (next_len[LANE_W] == borrow);
+                    run_lanes_next = run_ends_next ? tail_lanes_next : ALL_LANES;
+                end else if (run_lanes == ALL_LANES - 1) begin
+                    len_high_next = in_data[8*(LANES-1) +: 8];
+                    len_split_next = 1'b1;
                 end
             end
-            if (in_last) begin                  
-                st_n = S_HDR;
-                left_n = 16'd20;
-                fill_n = 3'd0;
-                first_n = 1'b1;
+
+            if (in_last) begin
+                in_hdr_next = 1'b1;
+                len_split_next = 1'b0;
+                run_lanes_next = HDR_LANES;
+                run_ends_next = HDR_ENDS;
+                beats_left_next = HDR_BEATS;
+                tail_lanes_next = HDR_TAIL;
+                stage_bytes_next = '0;
+                msg_first_next = 1'b1;
+                hdr_beat_next = '0;
             end
         end
     end
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            state <= S_HDR;                 
-            left <= 16'd20;                
-            fill <= 3'd0;
-            first <= 1'b1;
+            run_lanes <= HDR_LANES;
+            run_ends <= HDR_ENDS;
+            beats_left <= HDR_BEATS;
+            tail_lanes <= HDR_TAIL;
+            in_hdr <= 1'b1;
+            len_split <= 1'b0;
+            stage_bytes <= '0;
+            msg_first <= 1'b1;
+            hdr_beat <= '0;
         end else begin
-            state <= st_n;
-            left <= left_n;
-            fill <= fill_n;
-            first <= first_n;
+            run_lanes <= run_lanes_next;
+            run_ends <= run_ends_next;
+            beats_left <= beats_left_next;
+            tail_lanes <= tail_lanes_next;
+            in_hdr <= in_hdr_next;
+            len_split <= len_split_next;
+            stage_bytes <= stage_bytes_next;
+            msg_first <= msg_first_next;
+            hdr_beat <= hdr_beat_next;
         end
-        len <= len_n;
-        seq <= seq_n;
-        stage <= stage_n;
+        len_high <= len_high_next;
+        stage <= stage_next;
+        len <= len_next;
+        seq <= seq_next;
     end
 
 endmodule

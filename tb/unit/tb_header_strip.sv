@@ -7,11 +7,11 @@ module tb_header_strip();
 
     logic rst, in_valid, in_last, in_fcs_ok;
     logic out_valid, out_last, out_fcs_ok, drop_pulse;
-    logic [31:0] in_data, out_data;
-    logic [3:0] in_keep, out_keep;
+    logic [63:0] in_data, out_data;
+    logic [7:0] in_keep, out_keep;
 
-    logic [39:0] ebeat [0:MAXB-1];
-    logic [39:0] gbeat [0:MAXB-1];
+    logic [79:0] ebeat [0:MAXB-1];
+    logic [79:0] gbeat [0:MAXB-1];
     int n_eth = 0, n_gold = 0, g = 0, errors = 0;
 
     header_strip DUT(.*);
@@ -29,7 +29,7 @@ module tb_header_strip();
 
         for (int i = 0; i < n_eth; i++) begin
             @(posedge clk); #1;
-            {in_fcs_ok, in_last, in_keep, in_data} = ebeat[i][37:0];
+            {in_fcs_ok, in_last, in_keep, in_data} = ebeat[i][73:0];
             in_valid = 1;
         end
         @(posedge clk); #1;
@@ -47,10 +47,10 @@ module tb_header_strip();
             if (g >= n_gold) begin
                 if (errors < 10) $error("beat %0d: output past the end of the golden vector", g);
                 errors++;
-            end else if ({out_last, out_keep, out_data} !== gbeat[g][36:0]) begin
+            end else if ({out_last, out_keep, out_data} !== gbeat[g][72:0]) begin
                 if (errors < 10)
-                    $error("beat %0d: got last=%0b keep=%b data=%08h expected last=%0b keep=%b data=%08h",
-                           g, out_last, out_keep, out_data, gbeat[g][36], gbeat[g][35:32], gbeat[g][31:0]);
+                    $error("beat %0d: got last=%0b keep=%b data=%016h expected last=%0b keep=%b data=%016h",
+                           g, out_last, out_keep, out_data, gbeat[g][72], gbeat[g][71:64], gbeat[g][63:0]);
                 errors++;
             end
             g++;

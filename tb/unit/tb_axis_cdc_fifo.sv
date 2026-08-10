@@ -4,7 +4,7 @@
 module tb_axis_cdc_fifo;
 
     localparam int  ADDR_W = 5;
-    localparam int  DATA_W = 32;
+    localparam int  DATA_W = 64;
     localparam int  KEEP_W = DATA_W/8;
     localparam int  DEPTH  = 1 << ADDR_W;
     localparam time STEP   = 1ns;
@@ -84,7 +84,7 @@ module tb_axis_cdc_fifo;
         @(posedge wr_clk);
         #STEP;
         for (int i = 0; i < nwords; i++) begin
-            d = $urandom;
+            d = {$urandom, $urandom};
             l = (i == nwords - 1);
             k = l ? ({KEEP_W{1'b1}} >> $urandom_range(0, KEEP_W-1)) : {KEEP_W{1'b1}};
             wr_valid  = 1'b1;
