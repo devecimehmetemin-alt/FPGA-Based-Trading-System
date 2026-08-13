@@ -14,18 +14,23 @@ tb/vectors/*.txt
 *.str
 *.bit
 *.ltx
+*.dcp
+*.rpt
+usage_statistics_webtalk.*
 .Xil/
 build/
 proj/
 *.cache/
 *.hw/
 *.gen/
+*.srcs/
 *.ip_user_files/
 *.runs/
 *.sim/
 
 xsim.dir/
 *.wdb
+*.wlf
 *.vcd
 *.pb
 
@@ -36,3 +41,4 @@ venv/
 
 host/build/
 *.o
+*.exe
