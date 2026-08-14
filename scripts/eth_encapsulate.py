@@ -53,6 +53,8 @@ DEFAULT_DST_PORT = 26477
 DEFAULT_SRC_PORT = 50000
 DEFAULT_SRC_MAC = "02:00:00:00:00:01"
 DEFAULT_MTU = 1500
+WRONG_MAC = bytes([0x01, 0x00, 0x5E, 0x00, 0x00, 0x01])
+WRONG_IP = ipaddress.IPv4Address("239.1.2.3")
 
 
 def read_hex_bytes(path: Path) -> bytes:
@@ -171,6 +173,17 @@ def write_hex(path: Path, data: bytes) -> None:
             handle.write(f"{byte:02X}\n")
 
 
+def pack_payload_beats(data: bytes) -> list[int]:
+    beats = []
+    for start in range(0, len(data), 8):
+        chunk = data[start:start + 8]
+        word = int.from_bytes(chunk.ljust(8, b"\x00"), "little")
+        last = start + len(chunk) >= len(data)
+        keep = (1 << len(chunk)) - 1
+        beats.append((last << 72) | (keep << 64) | word)
+    return beats
+
+
 def pack_beats(data: bytes, fcs_ok: bool) -> list[int]:
     beats = []
     for start in range(0, len(data), 8):
@@ -218,6 +231,9 @@ def main() -> int:
                         help="prepend the 7-byte preamble and SFD to every frame")
     parser.add_argument("--corrupt-fcs", default=None,
                         help="comma-separated frame indices whose FCS is inverted")
+    parser.add_argument("--reject", default=None,
+                        help="comma-separated frame indices addressed elsewhere, "
+                             "cycling wrong mac, wrong ip, wrong port")
     args = parser.parse_args()
 
     outdir = args.outdir if args.outdir is not None else args.vectors
@@ -258,9 +274,17 @@ def main() -> int:
     budget = args.mtu - IPV4_HEADER_LEN - UDP_HEADER_LEN
     outdir.mkdir(parents=True, exist_ok=True)
 
+    reject = {int(i) for i in args.reject.split(",") if i.strip()} if args.reject else set()
+    stray = {i for i in reject if i >= len(packets)}
+    if stray:
+        print(f"error: --reject names nonexistent frames: {sorted(stray)}", file=sys.stderr)
+        return 1
+    reject_kind = {i: ("mac", "ip", "port")[n % 3] for n, i in enumerate(sorted(reject))}
+
     wire = bytearray()
     frame_lines = []
     beats = []
+    expect = []
     padding = 0
 
     for index, (offset, length, sequence, count) in enumerate(packets):
@@ -273,23 +297,31 @@ def main() -> int:
                   f"{budget}-byte budget for a {args.mtu}-byte MTU", file=sys.stderr)
             return 1
 
-        datagram = build_udp(src_ip, dst_ip, args.src_port, args.dst_port,
+        kind = reject_kind.get(index)
+        f_mac = WRONG_MAC if kind == "mac" else dst_mac
+        f_ip = WRONG_IP if kind == "ip" else dst_ip
+        f_port = args.dst_port ^ 1 if kind == "port" else args.dst_port
+
+        datagram = build_udp(src_ip, f_ip, args.src_port, f_port,
                              payload, not args.no_udp_checksum)
-        packet = build_ipv4(src_ip, dst_ip, args.ip_id + index, args.ttl, datagram)
-        frame, payload_offset, body = build_frame(dst_mac, src_mac, packet,
+        packet = build_ipv4(src_ip, f_ip, args.ip_id + index, args.ttl, datagram)
+        frame, payload_offset, body = build_frame(f_mac, src_mac, packet,
                                                   not args.no_fcs, index in corrupt, args.preamble)
 
-        state = "bad" if index in corrupt else "ok"
+        state = "badfcs" if index in corrupt else (kind if kind else "ok")
         frame_lines.append(
             f"{len(wire)} {len(frame)} {payload_offset} {len(payload)} "
             f"{sequence} {count} {state}"
         )
         wire += frame
         beats += pack_beats(body, index not in corrupt)
+        if kind is None:
+            expect += pack_payload_beats(payload)
         padding += len(body) - ETH_HEADER_LEN - len(packet)
 
     write_hex(outdir / "eth_bytes.hex", bytes(wire))
     write_beats(outdir / "eth_beats.hex", beats)
+    write_beats(outdir / "mold_expect.hex", expect)
     (outdir / "eth_frames.txt").write_text("\n".join(frame_lines) + "\n", newline="\n")
 
     payload_bytes = sum(length for _, length, _, _ in packets)
@@ -301,6 +333,10 @@ def main() -> int:
     print(f"beats     {len(beats)} 64-bit beats, preamble and FCS excluded")
     if corrupt:
         print(f"corrupted FCS on frames {sorted(corrupt)}")
+    if reject:
+        print(f"rejected  {len(reject)} frames "
+              f"({', '.join(f'{i}:{reject_kind[i]}' for i in sorted(reject))}), "
+              f"{len(expect)} beats expected out of header_strip")
     if padding:
         print(f"warning: {padding} bytes of Ethernet padding were added; "
               f"header_strip forwards padding as payload, so mold_beats.hex "

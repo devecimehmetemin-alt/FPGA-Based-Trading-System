@@ -10,7 +10,7 @@ set rtl(tb_itch_parse)    {rtl/itch/itch_parse.sv}
 set rtl(tb_symbol_filter) {rtl/itch/symbol_filter.sv}
 set rtl(tb_feed_top)      {rtl/eth/header_strip.sv rtl/eth/mold_deframe.sv rtl/itch/itch_parse.sv rtl/itch/symbol_filter.sv rtl/top/feed_top.sv}
 
-set vec(tb_header_strip)  {eth_beats.hex mold_beats.hex}
+set vec(tb_header_strip)  {eth_beats.hex mold_expect.hex eth_frames.txt}
 set vec(tb_axis_cdc_fifo) {}
 set vec(tb_mold_deframe)  {mold_beats.hex itch_expect.hex itch_expect.txt}
 set vec(tb_itch_parse)    {itch_expect.hex itch_expect.txt}

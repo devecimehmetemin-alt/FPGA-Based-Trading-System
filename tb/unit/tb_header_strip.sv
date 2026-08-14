@@ -13,15 +13,29 @@ module tb_header_strip();
     logic [79:0] ebeat [0:MAXB-1];
     logic [79:0] gbeat [0:MAXB-1];
     int n_eth = 0, n_gold = 0, g = 0, errors = 0;
+    int n_bad = 0, drops = 0;
 
     header_strip DUT(.*);
 
     initial begin
+        int fd, a, b, c, d, e, f;
+        string state;
+
         $readmemh("eth_beats.hex", ebeat);
-        $readmemh("mold_beats.hex", gbeat);
+        $readmemh("mold_expect.hex", gbeat);
         while (n_eth < MAXB && !$isunknown(ebeat[n_eth])) n_eth++;
         while (n_gold < MAXB && !$isunknown(gbeat[n_gold])) n_gold++;
-        $display("loaded %0d input beats, %0d golden beats", n_eth, n_gold);
+
+        fd = $fopen("eth_frames.txt", "r");
+        if (fd == 0) begin
+            $display("cannot open eth_frames.txt");
+            $finish;
+        end
+        while ($fscanf(fd, "%d %d %d %d %d %d %s", a, b, c, d, e, f, state) == 7)
+            if (state != "ok" && state != "badfcs") n_bad++;
+        $fclose(fd);
+        $display("loaded %0d input beats, %0d golden beats, %0d frames to reject",
+                 n_eth, n_gold, n_bad);
 
         rst = 1; in_valid = 0; in_data = '0; in_keep = '0; in_last = 0; in_fcs_ok = 0;
         repeat (4) @(posedge clk);
@@ -36,13 +50,14 @@ module tb_header_strip();
         in_valid = 0; in_last = 0;
         repeat (20) @(posedge clk);
 
-        $display("checked=%0d/%0d errors=%0d", g, n_gold, errors);
-        if (errors == 0 && g == n_gold && g > 0) $display("RESULT: PASS");
+        $display("checked=%0d/%0d drops=%0d/%0d errors=%0d", g, n_gold, drops, n_bad, errors);
+        if (errors == 0 && g == n_gold && g > 0 && drops == n_bad) $display("RESULT: PASS");
         else $display("RESULT: FAIL");
         $finish;
     end
 
     always @(negedge clk) begin
+        if (drop_pulse) drops++;
         if (out_valid) begin
             if (g >= n_gold) begin
                 if (errors < 10) $error("beat %0d: output past the end of the golden vector", g);
