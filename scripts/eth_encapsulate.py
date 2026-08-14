@@ -24,8 +24,9 @@ Bytes pack little-endian within a beat, so frame byte 0 lands in data[7:0] and
 beat 0 carries the destination MAC. These beats are what a MAC hands to
 header_strip: the preamble and the FCS are never in them, --preamble and
 --no-fcs reach eth_bytes.hex only, and --corrupt-fcs shows up as fcs_ok = 0 on
-every beat of the frame. The defaults already satisfy header_strip's header
-checks; mold_beats.hex is then its expected output, beat for beat.
+the frame's final beat alone, matching a real MAC's tuser. The defaults already
+satisfy header_strip's header checks; mold_beats.hex is then its expected
+output, beat for beat.
 """
 
 from __future__ import annotations
@@ -177,7 +178,11 @@ def pack_beats(data: bytes, fcs_ok: bool) -> list[int]:
         word = int.from_bytes(chunk.ljust(8, b"\x00"), "little")
         last = start + len(chunk) >= len(data)
         keep = (1 << len(chunk)) - 1
-        beats.append((int(fcs_ok) << 73) | (last << 72) | (keep << 64) | word)
+        # A 10G MAC reports a bad frame as tuser on the final beat, so fcs_ok is
+        # the inverse of tuser and stays high on every earlier beat even when the
+        # CRC fails. The verdict is not available until the frame has ended.
+        beat_ok = fcs_ok or not last
+        beats.append((int(beat_ok) << 73) | (last << 72) | (keep << 64) | word)
     return beats
 
 

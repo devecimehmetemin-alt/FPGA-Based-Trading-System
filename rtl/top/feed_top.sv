@@ -55,7 +55,11 @@ module feed_top #(
     logic [63:0] parse_seq, parse_ref, parse_ref2, parse_stock;
     logic [31:0] parse_shares, parse_price;
 
-    logic pkt_ok, pkt_ok_d;
+    // A 10G MAC only reports a bad frame with tuser on the final beat, by which
+    // point the frame's records have already been emitted. Suppressing them would
+    // cost a frame of buffering, ~1.17 us at 10 Gbps against a 32 ns parse, so the
+    // records go out unconditionally and pkt_bad is left as a status output. Bad
+    // FCS is a 1e-12 event on a working link.
 
     header_strip #(
         .MCAST_MAC(MCAST_MAC),
@@ -124,7 +128,7 @@ module feed_top #(
     symbol_filter u_symbol_filter (
         .clk(clk),
         .rst(rst),
-        .rec_valid(parse_valid & pkt_ok),
+        .rec_valid(parse_valid),
         .rec_type(parse_type),
         .rec_locate(parse_locate),
         .rec_time(parse_time),
@@ -155,8 +159,6 @@ module feed_top #(
             msg_valid <= 1'b0;
             msg_start <= 1'b0;
             msg_last <= 1'b0;
-            pkt_ok_d <= 1'b1;
-            pkt_ok <= 1'b1;
             rec_err <= 1'b0;
         end else begin
             mold_valid <= hs_valid;
@@ -164,9 +166,7 @@ module feed_top #(
             msg_valid <= raw_valid;
             msg_start <= raw_start;
             msg_last <= raw_last;
-            if (mold_valid) pkt_ok_d <= mold_fcs_ok;
-            pkt_ok <= pkt_ok_d;
-            rec_err <= parse_err & pkt_ok;
+            rec_err <= parse_err;
         end
         mold_data <= hs_data;
         mold_keep <= hs_keep;
