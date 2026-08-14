@@ -1,9 +1,10 @@
 # vivado -mode batch -source scripts/build.tcl -tclargs <module> [clock_period_ns]
 
-set part xc7a12ticsg325-1L
+set part xck26-sfvc784-2LV-c
+set board xilinx.com:kr260_som:part0:2.0
 
 set top    [expr {[llength $argv] > 0 ? [lindex $argv 0] : "header_strip"}]
-set period [expr {[llength $argv] > 1 ? [lindex $argv 1] : 8.0}]
+set period [expr {[llength $argv] > 1 ? [lindex $argv 1] : 6.4}]
 
 set root   [file normalize [file join [file dirname [info script]] ..]]
 set outdir $root/build/synth/$top
@@ -20,6 +21,9 @@ if {[llength $srcs] == 0} {
 }
 
 create_project -in_memory -part $part
+if {[llength [get_board_parts -quiet $board]]} {
+    set_property board_part $board [current_project]
+}
 read_verilog -sv $srcs
 synth_design -mode out_of_context -top $top -part $part
 
@@ -46,9 +50,9 @@ report_timing -max_paths 10 -file $outdir/paths.rpt
 
 set wns [get_property SLACK [get_timing_paths -delay_type max]]
 set fmax [expr {1000.0 / ($period - $wns)}]
-set luts  [llength [get_cells -quiet -hier -filter {PRIMITIVE_GROUP == LUT}]]
-set ffs   [llength [get_cells -quiet -hier -filter {PRIMITIVE_GROUP == FLOP_LATCH}]]
-set brams [llength [get_cells -quiet -hier -filter {PRIMITIVE_GROUP == BLOCKRAM}]]
+set luts  [llength [get_cells -quiet -hier -filter {REF_NAME =~ LUT*}]]
+set ffs   [llength [get_cells -quiet -hier -filter {REF_NAME =~ FD*}]]
+set brams [llength [get_cells -quiet -hier -filter {REF_NAME =~ RAMB*}]]
 
 puts "--------------------------------------------------"
 puts "module   : $top"
