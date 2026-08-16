@@ -17,7 +17,11 @@ module mold_deframe #(
     output logic msg_last,
     output logic [15:0] msg_len, // message length is 2 bytes
     output logic [63:0] msg_seq, // message sequence is 8 bytes
-    output logic pkt_bad // in_fcs_ok = 0
+    output logic pkt_bad, // in_fcs_ok = 0
+    output logic gap_pulse, // packets were lost before this one
+    output logic [63:0] gap_from, // first sequence number missed
+    output logic [15:0] gap_count, // messages missed, saturating
+    output logic dup_pulse // packet older than expected
 );
 
     // MoldUDP64: session[10] seq[8] count[2] then count x { len[2] body[len] }
@@ -34,6 +38,7 @@ module mold_deframe #(
     localparam logic HDR_ENDS = (HDR_BEATS == 0);
     localparam logic [CNT_W-1:0] HDR_LANES = HDR_ENDS ? HDR_TAIL : ALL_LANES;
     localparam logic [2*LANES-1:0] KEEP_ONES = {(2*LANES){1'b1}};
+    localparam int SEQ_END_BEAT = 17 / LANES; // beat carrying the last sequence byte
 
     logic [CNT_W-1:0] run_lanes, run_lanes_next; // lanes of this beat inside the current run
     logic [CNT_W-1:0] tail_lanes, tail_lanes_next; // lanes the run's final beat will carry
@@ -49,7 +54,15 @@ module mold_deframe #(
     logic [63:0] seq, seq_next;
     logic [2:0] hdr_beat, hdr_beat_next;
 
+    logic [63:0] expect_seq; // sequence the next packet should announce
+    logic [63:0] seen_seq, hold_expect; // the pair under comparison, both registered
+    logic [63:0] seq_delta;
+    logic primed, seq_done, cmp_valid;
+
     assign pkt_bad = in_valid & in_last & ~in_fcs_ok;
+
+    assign seq_done = in_valid & in_hdr & (hdr_beat == 3'(SEQ_END_BEAT));
+    assign seq_delta = seen_seq - hold_expect;
 
     always_comb begin
         logic [CNT_W-1:0] skip_bytes, lead_bytes;
@@ -172,6 +185,36 @@ module mold_deframe #(
         stage <= stage_next;
         len <= len_next;
         seq <= seq_next;
+    end
+
+    // seq counts messages, so by the end of a packet it already holds the sequence
+    // the next packet should announce. Comparing the two catches loss and replay.
+    // Both operands are captured on the header beat and compared the cycle after,
+    // keeping the 64-bit subtract register to register. The snapshot also fixes the
+    // ordering on a count-0 heartbeat, where the header beat is also the last beat
+    // and expect_seq is reloaded from the same value being tested.
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            primed <= 1'b0;
+            cmp_valid <= 1'b0;
+            gap_pulse <= 1'b0;
+            dup_pulse <= 1'b0;
+        end else begin
+            cmp_valid <= seq_done;
+            if (cmp_valid) primed <= 1'b1;
+            gap_pulse <= primed & cmp_valid & (seen_seq > hold_expect);
+            dup_pulse <= primed & cmp_valid & (seen_seq < hold_expect);
+        end
+        if (seq_done) begin
+            seen_seq <= seq_next;
+            hold_expect <= expect_seq;
+        end
+        if (cmp_valid) begin
+            gap_from <= hold_expect;
+            gap_count <= (|seq_delta[63:16]) ? 16'hFFFF : seq_delta[15:0];
+        end
+        if (in_valid & in_last) expect_seq <= seq_next;
     end
 
 endmodule

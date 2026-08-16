@@ -25,7 +25,11 @@ module feed_top #(
     output logic [63:0] rec_stock,
     output logic rec_err,
     output logic drop_pulse,
-    output logic pkt_bad
+    output logic pkt_bad,
+    output logic gap_pulse,
+    output logic [63:0] gap_from,
+    output logic [15:0] gap_count,
+    output logic dup_pulse
 );
 
     logic hs_valid, hs_last, hs_fcs_ok;
@@ -98,7 +102,11 @@ module feed_top #(
         .msg_last(raw_last),
         .msg_len(raw_len),
         .msg_seq(raw_seq),
-        .pkt_bad(pkt_bad)
+        .pkt_bad(pkt_bad),
+        .gap_pulse(gap_pulse),
+        .gap_from(gap_from),
+        .gap_count(gap_count),
+        .dup_pulse(dup_pulse)
     );
 
     itch_parse u_itch_parse (

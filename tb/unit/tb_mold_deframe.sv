@@ -3,6 +3,7 @@ module tb_mold_deframe();
     localparam int MAXB = 32768;
     localparam int MAXBY = 262144;
     localparam int MAXM = 8192;
+    localparam int MAXP = 4096;
 
     logic clk = 0;
     always #5 clk = ~clk;
@@ -15,6 +16,9 @@ module tb_mold_deframe();
     logic [15:0] msg_keep;
     logic [15:0] msg_len;
     logic [63:0] msg_seq;
+    logic gap_pulse, dup_pulse;
+    logic [63:0] gap_from;
+    logic [15:0] gap_count;
 
     logic [79:0] mbeat [0:MAXB-1];
     logic [7:0] ebyte [0:MAXBY-1];
@@ -22,9 +26,13 @@ module tb_mold_deframe();
     int exp_len [0:MAXM-1];
     logic [63:0] exp_seq [0:MAXM-1];
 
+    logic [63:0] exp_from [0:MAXP-1];
+    int exp_cnt [0:MAXP-1];
+
     int n_beat = 0, n_byte = 0, n_msg = 0, p = 0, m = 0, errors = 0;
-    int fd, code, off, len;
-    logic [63:0] seq;
+    int n_gap = 0, g = 0;
+    int fd, code, off, len, cnt, first;
+    logic [63:0] seq, pseq, expect_next;
     string kind;
 
     mold_deframe DUT(.*);
@@ -49,7 +57,31 @@ module tb_mold_deframe();
             n_msg++;
         end
         $fclose(fd);
-        $display("loaded %0d beats, %0d golden bytes, %0d messages", n_beat, n_byte, n_msg);
+
+        // sequence counts messages, so a packet whose header does not announce the
+        // previous header's sequence plus its message count means packets were lost
+        fd = $fopen("mold_packets.txt", "r");
+        if (fd == 0) begin
+            $display("RESULT: FAIL");
+            $fatal(1, "cannot open mold_packets.txt");
+        end
+        first = 1;
+        expect_next = '0;
+        forever begin
+            code = $fscanf(fd, "%d %d %d %d\n", off, len, pseq, cnt);
+            if (code != 4) break;
+            if (!first && pseq != expect_next) begin
+                exp_from[n_gap] = expect_next;
+                exp_cnt[n_gap] = int'(pseq - expect_next);
+                n_gap++;
+            end
+            expect_next = pseq + cnt;
+            first = 0;
+        end
+        $fclose(fd);
+
+        $display("loaded %0d beats, %0d golden bytes, %0d messages, %0d gaps",
+                 n_beat, n_byte, n_msg, n_gap);
 
         rst = 1; in_valid = 0; in_data = '0; in_keep = '0; in_last = 0; in_fcs_ok = 0;
         repeat (4) @(posedge clk);
@@ -74,8 +106,10 @@ module tb_mold_deframe();
         in_valid = 0; in_last = 0;
         repeat (4) @(posedge clk);
 
-        $display("checked=%0d/%0d messages %0d/%0d bytes errors=%0d", m, n_msg, p, n_byte, errors);
-        if (errors == 0 && m == n_msg && p == n_byte && m > 0) $display("RESULT: PASS");
+        $display("checked=%0d/%0d messages %0d/%0d bytes gaps=%0d/%0d errors=%0d",
+                 m, n_msg, p, n_byte, g, n_gap, errors);
+        if (errors == 0 && m == n_msg && p == n_byte && m > 0 && g == n_gap)
+            $display("RESULT: PASS");
         else $display("RESULT: FAIL");
         $finish;
     end
@@ -126,6 +160,22 @@ module tb_mold_deframe();
                     m++;
                 end
             end
+        end
+        if (gap_pulse) begin
+            if (g >= n_gap) begin
+                if (errors < 10) $error("gap %0d: more gaps than the vector contains", g);
+                errors++;
+            end else if (gap_from !== exp_from[g] || gap_count !== exp_cnt[g]) begin
+                if (errors < 10)
+                    $error("gap %0d: from=%0d count=%0d expected from=%0d count=%0d",
+                           g, gap_from, gap_count, exp_from[g], exp_cnt[g]);
+                errors++;
+            end
+            g++;
+        end
+        if (dup_pulse) begin
+            if (errors < 10) $error("dup_pulse asserted at message %0d", m);
+            errors++;
         end
     end
 

@@ -16,6 +16,9 @@ module tb_feed_top();
     logic [47:0] rec_time;
     logic [63:0] rec_seq, rec_ref, rec_ref2, rec_stock;
     logic [31:0] rec_shares, rec_price;
+    logic gap_pulse, dup_pulse;
+    logic [63:0] gap_from;
+    logic [15:0] gap_count;
 
     logic [79:0] ebeat [0:MAXB-1];
     logic [7:0] gold [0:MAXG-1];
@@ -138,6 +141,16 @@ module tb_feed_top();
         end
         if (pkt_bad) begin
             if (errors < 10) $error("pkt_bad asserted at record %0d", got);
+            errors++;
+        end
+        if (gap_pulse) begin
+            if (errors < 10)
+                $error("gap_pulse at record %0d: %0d messages missing from %0d",
+                       got, gap_count, gap_from);
+            errors++;
+        end
+        if (dup_pulse) begin
+            if (errors < 10) $error("dup_pulse asserted at record %0d", got);
             errors++;
         end
     end
