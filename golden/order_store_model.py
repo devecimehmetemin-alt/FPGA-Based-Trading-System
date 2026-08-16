@@ -6,9 +6,7 @@ in and how full each set gets. That makes it a check on the sizing decisions as
 well as on the ITCH semantics.
 
 Input is the parsed message stream already produced for the other stages,
-tb/vectors/itch_expect.{hex,txt}. Records are filtered exactly as symbol_filter
-does it: a symbol match for A/F, and everything else admitted because the message
-carries no symbol to filter on.
+tb/vectors/itch_expect.{hex,txt}.
 
 Output tb/vectors/order_expect.txt, one line per emitted record:
 
@@ -24,7 +22,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-SYMBOLS = [b"ZVZZT   ", b"SAP     ", b"GNW     ", b"RIO     "]
+SYMBOLS = [b"AAPL    "]
 
 KEEP = {"A", "F", "E", "C", "X", "D", "U"}
 ADDS = {"A", "F"}
@@ -113,8 +111,8 @@ def main() -> int:
     ap.add_argument("--sets", type=int, default=8192)
     ap.add_argument("--ways", type=int, default=16)
     ap.add_argument("--tag-lo", type=int, default=13)
-    ap.add_argument("--tag-bits", type=int, default=20)
-    ap.add_argument("--shares-bits", type=int, default=16)
+    ap.add_argument("--tag-bits", type=int, default=17)
+    ap.add_argument("--shares-bits", type=int, default=20)
     args = ap.parse_args()
 
     hexfile = args.vectors / "itch_expect.hex"
@@ -133,6 +131,7 @@ def main() -> int:
     max_shares = 0
     max_ref = 0
     emitted = 0
+    known = set()
 
     for raw in txtfile.read_text().splitlines():
         parts = raw.split()
@@ -148,6 +147,7 @@ def main() -> int:
         if kind in ADDS:
             if data[off + 24 : off + 32] not in wanted:
                 continue
+            known.add(be(data, off, 1, 2))
             kept += 1
             sym = SYMBOLS.index(data[off + 24 : off + 32])
             side = 1 if data[off + 19] == 0x42 else 0
@@ -157,6 +157,9 @@ def main() -> int:
             hit = store.insert(ref, sym, side, price, shares)
             lines.append(f"{seq} {kind} {int(hit)} {sym} {side} {price} {shares} 0")
             emitted += 1
+            continue
+
+        if be(data, off, 1, 2) not in known:
             continue
 
         kept += 1

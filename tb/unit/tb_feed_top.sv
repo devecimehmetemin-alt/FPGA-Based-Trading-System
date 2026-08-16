@@ -24,6 +24,7 @@ module tb_feed_top();
     logic [7:0] gold [0:MAXG-1];
     int eoff [0:MAXM-1];
     int eseq [0:MAXM-1];
+    bit lmap [0:65535];
 
     int n_eth = 0, n_gold = 0, n_exp = 0;
     int got = 0, errors = 0;
@@ -36,8 +37,7 @@ module tb_feed_top();
     endfunction
 
     function automatic logic wanted(input logic [63:0] s);
-        wanted = (s == 64'h5A565A5A54202020) | (s == 64'h5341502020202020)
-               | (s == 64'h474E572020202020) | (s == 64'h52494F2020202020);
+        wanted = (s == 64'h4141504C20202020);
     endfunction
 
     task automatic cmp(input string name, input logic [63:0] a, input logic [63:0] b);
@@ -64,14 +64,17 @@ module tb_feed_top();
         while ($fscanf(fd, "%d %d %d %s", o, l, s, ty) == 4) begin
             if (ty == "A" || ty == "F") begin
                 if (wanted(fld(o, 24, 8))) begin
+                    lmap[int'(fld(o, 1, 2))] = 1;
                     eoff[n_exp] = o;
                     eseq[n_exp] = s;
                     n_exp++;
                 end
             end else if (ty == "E" || ty == "C" || ty == "X" || ty == "D" || ty == "U") begin
-                eoff[n_exp] = o;
-                eseq[n_exp] = s;
-                n_exp++;
+                if (lmap[int'(fld(o, 1, 2))]) begin
+                    eoff[n_exp] = o;
+                    eseq[n_exp] = s;
+                    n_exp++;
+                end
             end
         end
         $fclose(fd);
