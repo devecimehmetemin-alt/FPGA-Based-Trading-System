@@ -1,13 +1,10 @@
 `default_nettype none
 
 module symbol_filter #(
-    parameter int N_SYM = 4,
+    parameter int N_SYM = 1,
     // 8 byte ASCII, space padded, first character in the high byte
     parameter logic [64*N_SYM-1:0] SYMBOLS = {
-        64'h52494F2020202020, // RIO
-        64'h474E572020202020, // GNW
-        64'h5341502020202020, // SAP
-        64'h5A565A5A54202020  // ZVZZT
+        64'h4141504C20202020  // AAPL
     }
 )(
     input wire logic clk,
@@ -36,17 +33,33 @@ module symbol_filter #(
     output logic [63:0] out_stock
 );
 
-    // Only A and F carry a stock symbol
+    logic loc_match, str_match, admit, is_dir, is_add;
+    logic [15:0] sym_locate [N_SYM];
+    logic [N_SYM-1:0] known;
 
-    logic match, admit;
+    assign is_dir = (rec_type == 8'h52);
+    assign is_add = (rec_type == 8'h41) | (rec_type == 8'h46);
 
     always_comb begin
-        match = 1'b0;
-        for (int i = 0; i < N_SYM; i++)
-            if (rec_stock == SYMBOLS[64*i +: 64]) match = 1'b1;
+        loc_match = 1'b0;
+        str_match = 1'b0;
+        for (int i = 0; i < N_SYM; i++) begin
+            if (known[i] && rec_locate == sym_locate[i]) loc_match = 1'b1;
+            if (rec_stock == SYMBOLS[64*i +: 64]) str_match = 1'b1;
+        end
     end
 
-    assign admit = match | (rec_type != 8'h41 && rec_type != 8'h46);
+    assign admit = ~is_dir & (loc_match | str_match);
+
+    always_ff @(posedge clk) begin
+        if (rst) known <= '0;
+        else if (rec_valid & (is_dir | is_add))
+            for (int i = 0; i < N_SYM; i++)
+                if (rec_stock == SYMBOLS[64*i +: 64]) begin
+                    sym_locate[i] <= rec_locate;
+                    known[i] <= 1'b1;
+                end
+    end
 
     always_ff @(posedge clk) begin
         if (rst) out_valid <= 1'b0;

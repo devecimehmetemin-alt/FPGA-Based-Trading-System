@@ -60,6 +60,7 @@ module itch_parse (
             8'h58: expect_len = 16'd23; // X order cancel
             8'h44: expect_len = 16'd19; // D order delete
             8'h55: expect_len = 16'd35; // U order replace
+            8'h52: expect_len = 16'd39;
             default: type_wanted = 1'b0;
         endcase
     end
@@ -96,6 +97,7 @@ module itch_parse (
                 rec_shares = msg_buf_rev[8*9 +: 32]; // offset 27 width 4
                 rec_price = msg_buf_rev[8*5 +: 32]; // offset 31 width 4
             end
+            8'h52: rec_stock = msg_buf_rev[8*21 +: 64];
         endcase
     end
 
