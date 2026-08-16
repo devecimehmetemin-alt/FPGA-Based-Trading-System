@@ -10,11 +10,14 @@ tb/vectors/itch_expect.{hex,txt}.
 
 Output tb/vectors/order_expect.txt, one line per emitted record:
 
-    <seq> <type> <hit> <sym> <side> <price> <shares> <removed>
+    <seq> <type> <hit> <sym> <side> <price> <shares> <removed> <delta>
 
-shares is the quantity resting before this message. A replace emits two lines,
-the delete of the old ref then the insert of the new one, matching the two beat
-output the RTL produces.
+shares is the quantity resting before this message. delta is the signed change in
+resting quantity at that price, which is what price_levels consumes: the whole
+order on an add or a removal, only the executed amount on a partial fill, and
+zero when nothing was applied. A replace emits two lines, the delete of the old
+ref then the insert of the new one, matching the two beat output the RTL
+produces.
 """
 
 from __future__ import annotations
@@ -155,7 +158,8 @@ def main() -> int:
             price = be(data, off, 32, 4)
             max_shares = max(max_shares, shares)
             hit = store.insert(ref, sym, side, price, shares)
-            lines.append(f"{seq} {kind} {int(hit)} {sym} {side} {price} {shares} 0")
+            lines.append(f"{seq} {kind} {int(hit)} {sym} {side} {price} {shares} 0"
+                         f" {shares if hit else 0}")
             emitted += 1
             continue
 
@@ -168,19 +172,20 @@ def main() -> int:
             qty = be(data, off, 19, 4)
             found, e, gone = store.reduce(ref, qty)
             if found:
-                lines.append(f"{seq} {kind} 1 {e[1]} {e[2]} {e[3]} {e[4]} {int(gone)}")
+                lines.append(f"{seq} {kind} 1 {e[1]} {e[2]} {e[3]} {e[4]} {int(gone)}"
+                             f" {-(e[4] if gone else qty)}")
             else:
-                lines.append(f"{seq} {kind} 0 0 0 0 0 0")
+                lines.append(f"{seq} {kind} 0 0 0 0 0 0 0")
             emitted += 1
 
         elif kind == "D":
             _s, _w, e = store.find(ref)
             if e is None:
                 store.misses += 1
-                lines.append(f"{seq} D 0 0 0 0 0 0")
+                lines.append(f"{seq} D 0 0 0 0 0 0 0")
             else:
                 store.remove(ref)
-                lines.append(f"{seq} D 1 {e[1]} {e[2]} {e[3]} {e[4]} 1")
+                lines.append(f"{seq} D 1 {e[1]} {e[2]} {e[3]} {e[4]} 1 {-e[4]}")
             emitted += 1
 
         elif kind == "U":
@@ -192,14 +197,15 @@ def main() -> int:
             _s, _w, e = store.find(ref)
             if e is None:
                 store.misses += 1
-                lines.append(f"{seq} U 0 0 0 0 0 0")
+                lines.append(f"{seq} U 0 0 0 0 0 0 0")
                 emitted += 1
             else:
                 sym, side = e[1], e[2]
                 store.remove(ref)
-                lines.append(f"{seq} U 1 {sym} {side} {e[3]} {e[4]} 1")
+                lines.append(f"{seq} U 1 {sym} {side} {e[3]} {e[4]} 1 {-e[4]}")
                 hit = store.insert(new_ref, sym, side, price, shares)
-                lines.append(f"{seq} U {int(hit)} {sym} {side} {price} {shares} 0")
+                lines.append(f"{seq} U {int(hit)} {sym} {side} {price} {shares} 0"
+                             f" {shares if hit else 0}")
                 emitted += 2
 
     out = args.vectors / "order_expect.txt"

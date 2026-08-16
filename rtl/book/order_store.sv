@@ -131,22 +131,37 @@ module order_store #(
 
     logic [WAYS-1:0] hit, free;
     logic [WAY_W-1:0] hit_way, free_way;
-    logic hit_any, free_any, is_add, is_reduce, is_del, is_repl, empties;
-    logic applied, removed;
+    logic hit_any, free_any, s1_is_repl;
+    logic [ENTRY_W-1:0] sel_entry;
+
+    logic s2_valid, s2_side, s2_hit, s2_free;
+    logic [7:0] s2_type;
+    logic [IDX_W-1:0] s2_idx;
+    logic [TAG_BITS-1:0] s2_tag;
+    logic [1:0] s2_sym;
+    logic [31:0] s2_price, s2_qty;
+    logic [63:0] s2_ref2;
+    logic [WAY_W-1:0] s2_hit_way, s2_free_way;
+    logic [ENTRY_W-1:0] s2_entry;
+
+    logic is_add, is_reduce, is_del, is_repl, empties, applied, removed;
     logic [1:0] e_sym;
     logic e_side;
     logic [30:0] e_price;
     logic [SHARES_W-1:0] e_shares, qty, left;
 
-    // stage 1 writes the set stage 0 is reading, so a second record on the same
-    // index one cycle behind would see pre update data. One cycle of hold drains
-    // it, which is why this module can backpressure at all.
-    assign hold = s1_valid && (idx0 == s1_idx);
+    // the writeback now leaves stage 2, so a record entering stage 0 reads memory
+    // before either of the two records ahead of it has written. Blocking on both
+    // in flight indices is what keeps the read current; it is also the only reason
+    // this module can backpressure.
+    assign hold = (s1_valid && (idx0 == s1_idx)) || (s2_valid && (idx0 == s2_idx));
 
-    // a replace claims the next slot for its own insert, and has to block the
-    // input in the same cycle it is resolved. Waiting for pend_valid would be one
-    // cycle late and let an unrelated record land between the two halves.
-    assign repl_hold = s1_valid && is_repl && hit_any;
+    // a replace claims the next slot for its own insert. hit_any is already known
+    // in stage 1, so the input can be blocked before the replace resolves, which
+    // stops an unrelated record landing between the delete and the insert.
+    assign s1_is_repl = (s1_type == T_REPLACE);
+    assign repl_hold = (s1_valid && s1_is_repl && hit_any)
+                    || (s2_valid && is_repl && s2_hit);
 
     assign ready = !init_busy && !pend_valid && !repl_hold && !hold;
     assign s0_go = (pend_valid || rec_valid) && !init_busy && !repl_hold && !hold;
@@ -164,9 +179,8 @@ module order_store #(
         s1_ref2 <= rec_ref2;
     end
 
+    // stage 1: compare the sixteen tags and select the matching entry
     always_comb begin
-        logic [ENTRY_W-1:0] e;
-
         for (int i = 0; i < WAYS; i++) begin
             hit[i] = rd[i][F_VALID] && (rd[i][F_TAG +: TAG_BITS] == s1_tag);
             free[i] = !rd[i][F_VALID];
@@ -181,41 +195,63 @@ module order_store #(
             if (free[i]) free_way = WAY_W'(i);
         end
 
-        e = rd[hit_way];
-        e_sym = e[F_SYM +: 2];
-        e_side = e[F_SIDE];
-        e_price = e[F_PRICE +: 31];
-        e_shares = e[F_SHARES +: SHARES_W];
+        sel_entry = rd[hit_way];
+    end
 
-        is_add = (s1_type == T_ADD) || (s1_type == T_ADD_ATTR);
-        is_reduce = (s1_type == T_EXEC) || (s1_type == T_EXEC_PRICE) || (s1_type == T_CANCEL);
-        is_del = (s1_type == T_DELETE);
-        is_repl = (s1_type == T_REPLACE);
+    always_ff @(posedge clk) begin
+        if (rst) s2_valid <= 1'b0;
+        else s2_valid <= s1_valid;
+        s2_type <= s1_type;
+        s2_idx <= s1_idx;
+        s2_tag <= s1_tag;
+        s2_sym <= s1_sym;
+        s2_side <= s1_side;
+        s2_price <= s1_price;
+        s2_qty <= s1_qty;
+        s2_ref2 <= s1_ref2;
+        s2_entry <= sel_entry;
+        s2_hit <= hit_any;
+        s2_free <= free_any;
+        s2_hit_way <= hit_way;
+        s2_free_way <= free_way;
+    end
 
-        qty = s1_qty[SHARES_W-1:0];
+    // stage 2: apply the message to the selected entry and write it back
+    always_comb begin
+        e_sym = s2_entry[F_SYM +: 2];
+        e_side = s2_entry[F_SIDE];
+        e_price = s2_entry[F_PRICE +: 31];
+        e_shares = s2_entry[F_SHARES +: SHARES_W];
+
+        is_add = (s2_type == T_ADD) || (s2_type == T_ADD_ATTR);
+        is_reduce = (s2_type == T_EXEC) || (s2_type == T_EXEC_PRICE) || (s2_type == T_CANCEL);
+        is_del = (s2_type == T_DELETE);
+        is_repl = (s2_type == T_REPLACE);
+
+        qty = s2_qty[SHARES_W-1:0];
         left = e_shares - qty;
         empties = (e_shares <= qty);
-        applied = is_add ? (free_any && !hit_any) : hit_any;
-        removed = !is_add && hit_any && (is_del || is_repl || empties);
+        applied = is_add ? (s2_free && !s2_hit) : s2_hit;
+        removed = !is_add && s2_hit && (is_del || is_repl || empties);
 
         wr_en = '0;
-        wr_idx = s1_idx;
+        wr_idx = s2_idx;
         wr_data = '0;
         if (init_busy) begin
             wr_en = '1;
             wr_idx = init_idx;
-        end else if (s1_valid) begin
+        end else if (s2_valid) begin
             if (is_add) begin
-                if (free_any && !hit_any) begin
-                    wr_en[free_way] = 1'b1;
-                    wr_data = {1'b1, s1_tag, s1_sym, s1_side, s1_price[30:0], qty};
+                if (s2_free && !s2_hit) begin
+                    wr_en[s2_free_way] = 1'b1;
+                    wr_data = {1'b1, s2_tag, s2_sym, s2_side, s2_price[30:0], qty};
                 end
-            end else if (hit_any) begin
+            end else if (s2_hit) begin
                 if (is_del || is_repl) begin
-                    wr_en[hit_way] = 1'b1;
+                    wr_en[s2_hit_way] = 1'b1;
                 end else if (is_reduce) begin
-                    wr_en[hit_way] = 1'b1;
-                    if (!empties) wr_data = {1'b1, s1_tag, e_sym, e_side, e_price, left};
+                    wr_en[s2_hit_way] = 1'b1;
+                    if (!empties) wr_data = {1'b1, s2_tag, e_sym, e_side, e_price, left};
                 end
             end
         end
@@ -223,12 +259,12 @@ module order_store #(
 
     always_ff @(posedge clk) begin
         if (rst || flush) pend_valid <= 1'b0;
-        else if (s1_valid && is_repl && hit_any) begin
+        else if (s2_valid && is_repl && s2_hit) begin
             pend_valid <= 1'b1;
-            pend_ref <= s1_ref2;
+            pend_ref <= s2_ref2;
             pend_sym <= e_sym;
             pend_side <= e_side;
-            pend_price <= s1_price;
+            pend_price <= s2_price;
             pend_shares <= qty;
         end else if (pend_valid && s0_go) begin
             pend_valid <= 1'b0;
@@ -237,9 +273,9 @@ module order_store #(
 
     always_ff @(posedge clk) begin
         if (rst || flush) occupancy <= '0;
-        else if (s1_valid) begin
-            if (is_add && free_any && !hit_any) occupancy <= occupancy + 1'b1;
-            else if (hit_any && (is_del || is_repl || (is_reduce && empties)))
+        else if (s2_valid) begin
+            if (is_add && s2_free && !s2_hit) occupancy <= occupancy + 1'b1;
+            else if (s2_hit && (is_del || is_repl || (is_reduce && empties)))
                 occupancy <= occupancy - 1'b1;
         end
     end
@@ -251,15 +287,15 @@ module order_store #(
             miss_pulse <= 1'b0;
             dup_pulse <= 1'b0;
         end else begin
-            out_valid <= s1_valid;
-            ovf_pulse <= s1_valid && is_add && !hit_any && !free_any;
-            miss_pulse <= s1_valid && !is_add && !hit_any;
-            dup_pulse <= s1_valid && is_add && hit_any;
+            out_valid <= s2_valid;
+            ovf_pulse <= s2_valid && is_add && !s2_hit && !s2_free;
+            miss_pulse <= s2_valid && !is_add && !s2_hit;
+            dup_pulse <= s2_valid && is_add && s2_hit;
         end
         out_hit <= applied;
-        out_sym <= is_add ? s1_sym : e_sym;
-        out_side <= is_add ? s1_side : e_side;
-        out_price <= is_add ? s1_price : {1'b0, e_price};
+        out_sym <= is_add ? s2_sym : e_sym;
+        out_side <= is_add ? s2_side : e_side;
+        out_price <= is_add ? s2_price : {1'b0, e_price};
         out_shares <= is_add ? qty : e_shares;
         out_delta <= !applied ? '0
                    : is_add ? $signed({1'b0, qty})
