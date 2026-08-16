@@ -4,8 +4,8 @@ module order_store #(
     parameter int SETS = 8192,
     parameter int WAYS = 16,
     parameter int TAG_LO = 13,
-    parameter int TAG_BITS = 20,
-    parameter int SHARES_W = 16
+    parameter int TAG_BITS = 17,
+    parameter int SHARES_W = 20
 )(
     input wire logic clk,
     input wire logic rst,
@@ -25,6 +25,7 @@ module order_store #(
     output logic out_side,
     output logic [31:0] out_price,
     output logic [SHARES_W-1:0] out_shares,
+    output logic signed [SHARES_W:0] out_delta,
     output logic out_removed,
     output logic ovf_pulse,
     output logic miss_pulse,
@@ -38,7 +39,7 @@ module order_store #(
     // {valid, tag, sym, side, price, shares}, shares in the low bits
     localparam int F_SHARES = 0;
     localparam int F_PRICE = F_SHARES + SHARES_W;
-    localparam int F_SIDE = F_PRICE + 32;
+    localparam int F_SIDE = F_PRICE + 31;
     localparam int F_SYM = F_SIDE + 1;
     localparam int F_TAG = F_SYM + 2;
     localparam int F_VALID = F_TAG + TAG_BITS;
@@ -131,9 +132,10 @@ module order_store #(
     logic [WAYS-1:0] hit, free;
     logic [WAY_W-1:0] hit_way, free_way;
     logic hit_any, free_any, is_add, is_reduce, is_del, is_repl, empties;
+    logic applied, removed;
     logic [1:0] e_sym;
     logic e_side;
-    logic [31:0] e_price;
+    logic [30:0] e_price;
     logic [SHARES_W-1:0] e_shares, qty, left;
 
     // stage 1 writes the set stage 0 is reading, so a second record on the same
@@ -182,7 +184,7 @@ module order_store #(
         e = rd[hit_way];
         e_sym = e[F_SYM +: 2];
         e_side = e[F_SIDE];
-        e_price = e[F_PRICE +: 32];
+        e_price = e[F_PRICE +: 31];
         e_shares = e[F_SHARES +: SHARES_W];
 
         is_add = (s1_type == T_ADD) || (s1_type == T_ADD_ATTR);
@@ -190,9 +192,11 @@ module order_store #(
         is_del = (s1_type == T_DELETE);
         is_repl = (s1_type == T_REPLACE);
 
-        qty = |s1_qty[31:SHARES_W] ? '1 : s1_qty[SHARES_W-1:0];
+        qty = s1_qty[SHARES_W-1:0];
         left = e_shares - qty;
         empties = (e_shares <= qty);
+        applied = is_add ? (free_any && !hit_any) : hit_any;
+        removed = !is_add && hit_any && (is_del || is_repl || empties);
 
         wr_en = '0;
         wr_idx = s1_idx;
@@ -204,7 +208,7 @@ module order_store #(
             if (is_add) begin
                 if (free_any && !hit_any) begin
                     wr_en[free_way] = 1'b1;
-                    wr_data = {1'b1, s1_tag, s1_sym, s1_side, s1_price, qty};
+                    wr_data = {1'b1, s1_tag, s1_sym, s1_side, s1_price[30:0], qty};
                 end
             end else if (hit_any) begin
                 if (is_del || is_repl) begin
@@ -218,7 +222,7 @@ module order_store #(
     end
 
     always_ff @(posedge clk) begin
-        if (rst) pend_valid <= 1'b0;
+        if (rst || flush) pend_valid <= 1'b0;
         else if (s1_valid && is_repl && hit_any) begin
             pend_valid <= 1'b1;
             pend_ref <= s1_ref2;
@@ -252,12 +256,15 @@ module order_store #(
             miss_pulse <= s1_valid && !is_add && !hit_any;
             dup_pulse <= s1_valid && is_add && hit_any;
         end
-        out_hit <= is_add ? (free_any && !hit_any) : hit_any;
+        out_hit <= applied;
         out_sym <= is_add ? s1_sym : e_sym;
         out_side <= is_add ? s1_side : e_side;
-        out_price <= is_add ? s1_price : e_price;
+        out_price <= is_add ? s1_price : {1'b0, e_price};
         out_shares <= is_add ? qty : e_shares;
-        out_removed <= !is_add && hit_any && (is_del || is_repl || empties);
+        out_delta <= !applied ? '0
+                   : is_add ? $signed({1'b0, qty})
+                   : -$signed({1'b0, removed ? e_shares : qty});
+        out_removed <= removed;
     end
 
 endmodule
