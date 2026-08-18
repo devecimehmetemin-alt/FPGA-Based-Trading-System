@@ -1,7 +1,7 @@
 module tb_symbol_filter();
 
-    localparam int MAXG = 131072;
-    localparam int MAXM = 8192;
+    localparam int MAXG = 8388608;
+    localparam int MAXM = 262144;
 
     logic clk = 0;
     always #5 clk = ~clk;

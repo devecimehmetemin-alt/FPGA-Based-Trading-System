@@ -1,6 +1,6 @@
 module tb_header_strip();
 
-    localparam int MAXB = 32768;
+    localparam int MAXB = 1048576;
 
     logic clk = 0;
     always #5 clk = ~clk;

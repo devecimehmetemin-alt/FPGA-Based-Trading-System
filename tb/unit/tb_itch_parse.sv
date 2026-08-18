@@ -1,7 +1,7 @@
 module tb_itch_parse();
 
-    localparam int MAXG = 131072;
-    localparam int MAXM = 8192;
+    localparam int MAXG = 8388608;
+    localparam int MAXM = 262144;
     localparam int MAXBEAT = 15;
 
     logic clk = 0;

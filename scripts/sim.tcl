@@ -9,6 +9,11 @@ set rtl(tb_mold_deframe)  {rtl/eth/mold_deframe.sv}
 set rtl(tb_itch_parse)    {rtl/itch/itch_parse.sv}
 set rtl(tb_symbol_filter) {rtl/itch/symbol_filter.sv}
 set rtl(tb_feed_top)      {rtl/eth/header_strip.sv rtl/eth/mold_deframe.sv rtl/itch/itch_parse.sv rtl/itch/symbol_filter.sv rtl/top/feed_top.sv}
+set rtl(tb_sync_fifo)     {rtl/common/sync_fifo.sv}
+set rtl(tb_order_store)   {rtl/book/order_store.sv}
+set rtl(tb_price_level)   {rtl/book/price_level.sv}
+set rtl(tb_book_update)   {rtl/book/book_update.sv}
+set rtl(tb_book_top)      {rtl/eth/header_strip.sv rtl/eth/mold_deframe.sv rtl/itch/itch_parse.sv rtl/itch/symbol_filter.sv rtl/top/feed_top.sv rtl/common/sync_fifo.sv rtl/book/order_store.sv rtl/book/price_level.sv rtl/book/book_update.sv rtl/top/book_top.sv}
 
 set vec(tb_header_strip)  {eth_beats.hex mold_expect.hex eth_frames.txt}
 set vec(tb_axis_cdc_fifo) {}
@@ -16,6 +21,11 @@ set vec(tb_mold_deframe)  {mold_beats.hex itch_expect.hex itch_expect.txt mold_p
 set vec(tb_itch_parse)    {itch_expect.hex itch_expect.txt}
 set vec(tb_symbol_filter) {itch_expect.hex itch_expect.txt}
 set vec(tb_feed_top)      {eth_beats.hex itch_expect.hex itch_expect.txt}
+set vec(tb_sync_fifo)     {}
+set vec(tb_order_store)   {itch_expect.hex itch_expect.txt order_expect.txt}
+set vec(tb_price_level)   {order_expect.txt level_expect.txt}
+set vec(tb_book_update)   {level_expect.txt bbo_expect.txt}
+set vec(tb_book_top)      {eth_beats.hex bbo_expect.txt}
 
 if {![info exists rtl($tb)]} {
     puts "ERROR: no entry for $tb in scripts/sim.tcl"

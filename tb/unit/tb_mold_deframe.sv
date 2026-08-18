@@ -1,9 +1,9 @@
 module tb_mold_deframe();
 
-    localparam int MAXB = 32768;
-    localparam int MAXBY = 262144;
-    localparam int MAXM = 8192;
-    localparam int MAXP = 4096;
+    localparam int MAXB = 1048576;
+    localparam int MAXBY = 8388608;
+    localparam int MAXM = 262144;
+    localparam int MAXP = 16384;
 
     logic clk = 0;
     always #5 clk = ~clk;
