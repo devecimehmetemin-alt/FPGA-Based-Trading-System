@@ -15,7 +15,7 @@ module tb_price_level();
     logic [31:0] lvl_price;
     logic [31:0] lvl_qty;
     logic ovf_pulse, miss_pulse;
-    logic [13:0] occupancy;
+    logic [15:0] occupancy;
 
     int e_sym [0:MAXL-1];
     int e_side [0:MAXL-1];

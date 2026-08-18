@@ -132,7 +132,7 @@ class Ladder:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--vectors", type=Path, default=Path("tb/vectors"))
-    ap.add_argument("--sets", type=int, default=1024)
+    ap.add_argument("--sets", type=int, default=4096)
     ap.add_argument("--ways", type=int, default=8)
     ap.add_argument("--depth", type=int, default=8)
     args = ap.parse_args()

@@ -1,7 +1,7 @@
 `default_nettype none
 
 module price_level #(
-    parameter int SETS = 1024,
+    parameter int SETS = 4096,
     parameter int WAYS = 8,
     parameter int DELTA_W = 21,
     parameter int QTY_W = 32
@@ -55,7 +55,7 @@ module price_level #(
     genvar w;
     generate
         for (w = 0; w < WAYS; w++) begin : g_way
-            (* ram_style = "block" *)
+            (* ram_style = "ultra" *)
             logic [ENTRY_W-1:0] mem [SETS];
             always_ff @(posedge clk) begin
                 if (wr_en[w]) mem[wr_idx] <= wr_data;
