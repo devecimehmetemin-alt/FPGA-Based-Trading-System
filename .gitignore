@@ -7,6 +7,7 @@
 
 tb/vectors/*.hex
 tb/vectors/*.txt
+tb/vectors/*.mem
 
 *.xpr
 *.jou

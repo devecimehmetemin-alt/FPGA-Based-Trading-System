@@ -15,6 +15,11 @@ set rtl(tb_price_level)   {rtl/book/price_level.sv}
 set rtl(tb_book_update)   {rtl/book/book_update.sv}
 set rtl(tb_book_regs)     {rtl/axi/book_regs.sv}
 set rtl(tb_book_top)      {rtl/eth/header_strip.sv rtl/axi/book_regs.sv rtl/eth/mold_deframe.sv rtl/itch/itch_parse.sv rtl/itch/symbol_filter.sv rtl/top/feed_top.sv rtl/common/sync_fifo.sv rtl/book/order_store.sv rtl/book/price_level.sv rtl/book/book_update.sv rtl/top/book_top.sv}
+set rtl(tb_frame_pacer)   {rtl/sender_board/frame_pacer.sv}
+set rtl(tb_axis_narrow)   {rtl/sender_board/axis_narrow.sv}
+set rtl(tb_frame_unpack)  {rtl/sender_board/frame_unpack.sv}
+set rtl(tb_axi_read_stream) {rtl/sender_board/axi_read_stream.sv}
+set rtl(tb_sender_top)    {rtl/common/sync_fifo.sv rtl/sender_board/axi_read_stream.sv rtl/sender_board/axis_narrow.sv rtl/sender_board/frame_pacer.sv rtl/sender_board/frame_unpack.sv rtl/sender_board/sender_top.sv}
 
 set vec(tb_header_strip)  {eth_beats.hex mold_expect.hex eth_frames.txt}
 set vec(tb_axis_cdc_fifo) {}
@@ -28,6 +33,11 @@ set vec(tb_price_level)   {order_expect.txt level_expect.txt}
 set vec(tb_book_update)   {level_expect.txt bbo_expect.txt}
 set vec(tb_book_regs)     {}
 set vec(tb_book_top)      {eth_beats.hex bbo_expect.txt}
+set vec(tb_frame_pacer)   {}
+set vec(tb_axis_narrow)   {}
+set vec(tb_frame_unpack)  {}
+set vec(tb_axi_read_stream) {}
+set vec(tb_sender_top)    {sender_image.mem sender_meta.txt eth_beats.hex}
 
 if {![info exists rtl($tb)]} {
     puts "ERROR: no entry for $tb in scripts/sim.tcl"
