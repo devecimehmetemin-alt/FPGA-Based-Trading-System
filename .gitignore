@@ -42,3 +42,7 @@ venv/
 host/build/
 *.o
 *.exe
+
+host/*.bin
+host/*.mem
+host/*.manifest.txt
