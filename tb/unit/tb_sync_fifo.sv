@@ -12,6 +12,7 @@ module tb_sync_fifo();
     logic [ADDR_W:0] level;
 
     int errors = 0, sent = 0, recv = 0;
+    bit prod_done = 0;
     int model [$];
 
     sync_fifo #(.DATA_W(DATA_W), .ADDR_W(ADDR_W)) DUT (.*);
@@ -86,9 +87,10 @@ module tb_sync_fifo();
                 end
                 @(posedge clk); #1;
                 wr_valid = 0;
+                prod_done = 1;
             end
             begin
-                repeat (9000) begin
+                while (!prod_done || rd_valid) begin
                     @(posedge clk); #1;
                     rd_ready = ($urandom_range(0, 9) < 6);
                     @(negedge clk);
@@ -105,6 +107,8 @@ module tb_sync_fifo();
                         recv++;
                     end
                 end
+                @(posedge clk); #1;
+                rd_ready = 0;
             end
         join
 
