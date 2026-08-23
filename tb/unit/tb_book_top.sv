@@ -156,6 +156,7 @@ module tb_book_top();
             $error("axi bbo count: got %0d expected %0d", rv, got);
             errors++;
         end
+        report_latency();
         $display("checked=%0d/%0d orders=%0d levels=%0d degraded=%0b errors=%0d",
                  got, n_exp, store_occupancy, lvl_occupancy, degraded, errors);
         if (errors == 0 && got == n_exp && got > 0) $display("RESULT: PASS");
@@ -208,5 +209,147 @@ module tb_book_top();
             errors++;
         end
     end
+
+
+    // ---- latency ------------------------------------------------------------
+    // Endpoints are stated because the number is meaningless without them.
+    //   t0  the last beat of an ITCH message has been taken in by mold_deframe,
+    //       so the whole message is inside the fabric and can be acted on
+    //   t1  the book update that message caused appears
+    // What happens before t0 is the wire, not the design: a message cannot be
+    // acted on before its last byte has arrived. That part is measured on its own
+    // as the frame's last beat reaching the parser, which is exact because the
+    // last ITCH message in a MoldUDP packet ends on the frame's last byte.
+    //
+    // Stages that never stall are checked to be fixed by looking for a strobe
+    // exactly L cycles back on every event. Stages that do stall are one in one
+    // out, so a queue of timestamps rides the pipeline with the data.
+    int cyc = 0;
+    bit ml_hist [0:63];
+    bit lv_hist [0:63];
+    int lv_time [0:63];
+
+    int L1 = -1, L2 = -1;
+    int l1_bad = 0, l2_bad = 0, desync = 0;
+
+    int q_rec [$], q_store [$], q_lq [$], q_lvl [$];
+
+    int n_tot = 0, tot_min = 1 << 30, tot_max = 0;
+    longint tot_sum = 0;
+    int n_lv = 0, lv_min = 1 << 30, lv_max = 0;
+    longint lv_sum = 0;
+    int n_fe = 0, fe_min = 1 << 30, fe_max = 0;
+    longint fe_sum = 0;
+
+    int frame_last_cyc = 0;
+    bit fe_armed = 0;
+
+    always @(negedge clk) begin
+        if (!rst) begin
+            cyc++;
+            ml_hist[cyc % 64] = DUT.u_feed.msg_valid && DUT.u_feed.msg_last;
+            lv_hist[cyc % 64] = DUT.lvl_valid;
+
+            if (in_valid && in_last) begin
+                frame_last_cyc = cyc;
+                fe_armed = 1'b1;
+            end else if (fe_armed && ml_hist[cyc % 64]) begin
+                int d;
+                d = cyc - frame_last_cyc;
+                n_fe++;
+                fe_sum += d;
+                if (d < fe_min) fe_min = d;
+                if (d > fe_max) fe_max = d;
+                fe_armed = 1'b0;
+            end
+
+            if (DUT.rec_valid) begin
+                if (L1 < 0)
+                    for (int d = 0; d < 32 && d <= cyc && L1 < 0; d++)
+                        if (ml_hist[(cyc - d) % 64]) L1 = d;
+                if (L1 >= 0) begin
+                    if (!ml_hist[(cyc - L1) % 64]) l1_bad++;
+                    q_rec.push_back(cyc - L1);
+                end
+            end
+
+            if (DUT.rec_q_valid && DUT.rec_q_ready) begin
+                if (q_rec.size() == 0) desync++;
+                else q_store.push_back(q_rec.pop_front());
+            end
+
+            if (DUT.store_out_valid) begin
+                if (q_store.size() == 0) desync++;
+                else begin
+                    int t;
+                    t = q_store.pop_front();
+                    if (DUT.lvl_push) q_lq.push_back(t);
+                end
+            end
+
+            if (DUT.lvl_q_valid && DUT.lvl_q_ready) begin
+                if (q_lq.size() == 0) desync++;
+                else q_lvl.push_back(q_lq.pop_front());
+            end
+
+            if (DUT.lvl_valid) begin
+                if (q_lvl.size() == 0) desync++;
+                else begin
+                    int t, d;
+                    t = q_lvl.pop_front();
+                    lv_time[cyc % 64] = t;
+                    d = cyc - t;
+                    n_lv++;
+                    lv_sum += d;
+                    if (d < lv_min) lv_min = d;
+                    if (d > lv_max) lv_max = d;
+                end
+            end
+
+            if (bbo_valid) begin
+                if (L2 < 0)
+                    for (int d = 0; d < 32 && d <= cyc && L2 < 0; d++)
+                        if (lv_hist[(cyc - d) % 64]) L2 = d;
+                if (L2 >= 0) begin
+                    if (!lv_hist[(cyc - L2) % 64]) begin
+                        l2_bad++;
+                    end else begin
+                        int d;
+                        d = cyc - lv_time[(cyc - L2) % 64];
+                        n_tot++;
+                        tot_sum += d;
+                        if (d < tot_min) tot_min = d;
+                        if (d > tot_max) tot_max = d;
+                    end
+                end
+            end
+        end
+    end
+
+    // 156.25 MHz is the 10G MAC clock the design is built for, 6.4 ns a cycle
+    function automatic real ns(input real cycles);
+        return cycles * 6.4;
+    endfunction
+
+    task automatic report_latency();
+        real fe_avg, lv_avg, tot_avg;
+        fe_avg = (n_fe > 0) ? real'(fe_sum) / real'(n_fe) : 0.0;
+        lv_avg = (n_lv > 0) ? real'(lv_sum) / real'(n_lv) : 0.0;
+        tot_avg = (n_tot > 0) ? real'(tot_sum) / real'(n_tot) : 0.0;
+        $display("");
+        $display("latency in cycles, ns at 156.25 MHz");
+        $display("  frame last beat -> message in fabric  min %0d max %0d avg %0.1f  (%0.1f ns)",
+                 fe_min, fe_max, fe_avg, ns(fe_avg));
+        $display("  message in fabric -> level updated    min %0d max %0d avg %0.1f  (%0.1f ns)",
+                 lv_min, lv_max, lv_avg, ns(lv_avg));
+        $display("  message in fabric -> bbo updated      min %0d max %0d avg %0.1f  (%0.1f ns)",
+                 tot_min, tot_max, tot_avg, ns(tot_avg));
+        $display("  worst case in fabric %0d cycles (%0.1f ns), jitter %0d cycles",
+                 tot_max, ns(real'(tot_max)), tot_max - tot_min);
+        $display("  parse and filter fixed at %0d, ladder fixed at %0d", L1, L2);
+        $display("  samples fe=%0d lvl=%0d bbo=%0d, fixed stage misses %0d/%0d, desync %0d",
+                 n_fe, n_lv, n_tot, l1_bad, l2_bad, desync);
+        $display("");
+    endtask
 
 endmodule

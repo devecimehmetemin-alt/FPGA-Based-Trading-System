@@ -70,6 +70,20 @@ def period_cycles(frame_len: int, rate_gbps: float) -> int:
     return max(period, floor)
 
 
+def stamp_period(frame_len: int, stamp: int, prev: int | None, scale: float) -> int:
+    """Gap to the previous packet's ITCH timestamp, in 156.25 MHz cycles.
+
+    scale divides every gap equally, so relative burstiness is untouched and only
+    the timebase shrinks. Gaps still cannot go below the frame's own wire time.
+    """
+    wire = frame_len + WIRE_OVERHEAD
+    floor = -(-wire // BYTES_PER_CYCLE)
+    if prev is None:
+        return floor
+    delta_ns = max(stamp - prev, 0)
+    return max(int(delta_ns * CLOCK_HZ / 1_000_000_000 / scale), floor)
+
+
 def encode_record(frame: bytes, period: int) -> bytes:
     padded = frame + bytes(-len(frame) % BYTES_PER_CYCLE)
     return struct.pack("<HHI", len(frame), 0, period) + padded
@@ -151,13 +165,15 @@ class PacketSource:
         want = self.rng.randint(1, self.max_per_packet)
         self._fill(want)
         if not self.residual:
-            return None, 0
+            return None, 0, None
         take = [self.residual[i] for i in range(min(want, len(self.residual)))]
         sequence, group = group_into_packets(take, self.mtu_payload, want, self.sequence)[0]
         for _ in range(len(group)):
             self.residual.popleft()
         self.sequence = sequence + len(group)
-        return serialise_packet(self.session, sequence, group), len(group)
+        # ITCH 5.0 header: type(1) locate(2) tracking(2) timestamp(6 BE ns)
+        stamp = int.from_bytes(group[0][5:11], "big") if len(group[0]) >= 11 else None
+        return serialise_packet(self.session, sequence, group), len(group), stamp
 
 
 def main() -> int:
@@ -192,6 +208,12 @@ def main() -> int:
                         help="also emit a 128-bit .mem per extent for $readmemh")
     parser.add_argument("--plan-only", action="store_true",
                         help="print the segment table without reading the capture")
+    parser.add_argument("--real-time", action="store_true",
+                        help="pace from the capture's own ITCH timestamps instead of "
+                             "the plan's constant rate, so bursts stay bursty")
+    parser.add_argument("--time-scale", type=float, default=1.0,
+                        help="with --real-time, divide every gap by this so a long "
+                             "capture fits a short demo without altering its shape")
     args = parser.parse_args()
 
     try:
@@ -235,8 +257,9 @@ def main() -> int:
         emitted = frames = messages = wire = cycles = 0
         first_extent = writer.index
         start_offset = writer.written
+        prev_stamp = None
         while emitted < target:
-            payload, count = source.next_packet()
+            payload, count, stamp = source.next_packet()
             if payload is None:
                 print(f"warning: capture exhausted during segment {index}", file=sys.stderr)
                 break
@@ -245,7 +268,11 @@ def main() -> int:
             ipv4 = build_ipv4(src_ip, dst_ip, identifier, args.ttl, udp)
             frame, _, _ = build_frame(dst_mac, src_mac, ipv4, False, False, False)
             identifier = (identifier + 1) & 0xFFFF
-            period = period_cycles(len(frame), rate)
+            if args.real_time and stamp is not None:
+                period = stamp_period(len(frame), stamp, prev_stamp, args.time_scale)
+                prev_stamp = stamp
+            else:
+                period = period_cycles(len(frame), rate)
             writer.append(encode_record(frame, period))
             emitted += RECORD_HEADER + len(frame) + (-len(frame) % BYTES_PER_CYCLE)
             frames += 1

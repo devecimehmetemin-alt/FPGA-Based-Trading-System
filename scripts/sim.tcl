@@ -1,6 +1,12 @@
 # vivado -mode batch -source scripts/sim.tcl -tclargs <tb_name>
 
 set tb [expr {[llength $argv] > 0 ? [lindex $argv 0] : "tb_header_strip"}]
+set wave 1
+set plus {}
+# vivado splits a tclarg on =, so plusargs are written name:value here
+foreach a [lrange $argv 1 end] {
+    if {$a eq "nowave"} { set wave 0 } else { lappend plus [string map {: =} $a] }
+}
 set root [file normalize [file join [file dirname [info script]] ..]]
 
 set rtl(tb_header_strip)  {rtl/eth/header_strip.sv}
@@ -19,6 +25,7 @@ set rtl(tb_frame_pacer)   {rtl/sender_board/frame_pacer.sv}
 set rtl(tb_axis_narrow)   {rtl/sender_board/axis_narrow.sv}
 set rtl(tb_frame_unpack)  {rtl/sender_board/frame_unpack.sv}
 set rtl(tb_axi_read_stream) {rtl/sender_board/axi_read_stream.sv}
+set rtl(tb_book_chain)    {rtl/common/sync_fifo.sv rtl/book/order_store.sv rtl/book/price_level.sv rtl/book/book_update.sv}
 set rtl(tb_sender_top)    {rtl/common/sync_fifo.sv rtl/sender_board/axi_read_stream.sv rtl/sender_board/axis_narrow.sv rtl/sender_board/frame_pacer.sv rtl/sender_board/frame_unpack.sv rtl/sender_board/sender_top.sv}
 
 set vec(tb_header_strip)  {eth_beats.hex mold_expect.hex eth_frames.txt}
@@ -37,6 +44,7 @@ set vec(tb_frame_pacer)   {}
 set vec(tb_axis_narrow)   {}
 set vec(tb_frame_unpack)  {}
 set vec(tb_axi_read_stream) {}
+set vec(tb_book_chain)    {book_records.hex book_records.txt}
 set vec(tb_sender_top)    {sender_image.mem sender_meta.txt eth_beats.hex}
 
 if {![info exists rtl($tb)]} {
@@ -68,7 +76,7 @@ foreach f $rtl($tb) { lappend srcs $root/$f }
 lappend srcs $root/tb/unit/$tb.sv
 
 set fh [open wave.tcl w]
-puts $fh "log_wave -recursive *"
+if {$wave} { puts $fh "log_wave -recursive *" }
 puts $fh "run all"
 puts $fh "exit"
 close $fh
@@ -82,7 +90,9 @@ if {[catch {exec xelab $tb -s ${tb}_snap -debug typical --relax} out]} { puts $o
 puts $out
 
 puts "=== xsim ==="
-catch {exec xsim ${tb}_snap -wdb $tb.wdb -tclbatch wave.tcl} out
+set xa [list ${tb}_snap -wdb $tb.wdb -tclbatch wave.tcl]
+foreach p $plus { lappend xa -testplusarg $p }
+catch {exec xsim {*}$xa} out
 puts $out
 
 puts "waves: $work/$tb.wdb"
