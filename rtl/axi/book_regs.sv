@@ -25,6 +25,11 @@
 //   0x2C GAP_FROM_HI R
 //   0x30..0x5C       R   event counters, saturating
 
+// The AXI handshake is deliberately not reset-gated. Configuration initialises
+// every flop, so the slave answers from the first clock edge. Gating rvalid on a
+// reset means any stuck reset makes the slave accept a read and never complete
+// it, which hangs the reading CPU instead of returning something diagnosable.
+
 module book_regs #(
     parameter int ADDR_W = 8
 )(
@@ -39,14 +44,14 @@ module book_regs #(
     input wire logic s_axi_wvalid,
     output logic s_axi_wready,
     output logic [1:0] s_axi_bresp,
-    output logic s_axi_bvalid,
+    output logic s_axi_bvalid = 1'b0,
     input wire logic s_axi_bready,
     input wire logic [ADDR_W-1:0] s_axi_araddr,
     input wire logic s_axi_arvalid,
     output logic s_axi_arready,
     output logic [31:0] s_axi_rdata,
     output logic [1:0] s_axi_rresp,
-    output logic s_axi_rvalid,
+    output logic s_axi_rvalid = 1'b0,
     input wire logic s_axi_rready,
 
     input wire logic bbo_valid,
@@ -147,11 +152,7 @@ module book_regs #(
     assign s_axi_rresp = 2'b00;
 
     always_ff @(posedge clk) begin
-        if (rst) begin
-            s_axi_bvalid <= 1'b0;
-            snap <= 1'b0;
-            resync <= 1'b0;
-        end else begin
+        begin
             snap <= 1'b0;
             resync <= 1'b0;
             if (wr_go) begin
@@ -167,10 +168,7 @@ module book_regs #(
     end
 
     always_ff @(posedge clk) begin
-        if (rst) begin
-            s_axi_rvalid <= 1'b0;
-            s_axi_rdata <= '0;
-        end else if (rd_go) begin
+        if (rd_go) begin
             s_axi_rvalid <= 1'b1;
             case (rd_addr[ADDR_W-1:2])
                 6'h0: s_axi_rdata <= MAGIC;
