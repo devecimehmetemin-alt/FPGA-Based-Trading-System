@@ -20,14 +20,6 @@ module tb_book_top();
     logic [17:0] store_occupancy;
     logic [15:0] lvl_occupancy;
 
-    logic [7:0] s_axi_awaddr, s_axi_araddr;
-    logic s_axi_awvalid, s_axi_awready, s_axi_wvalid, s_axi_wready;
-    logic [31:0] s_axi_wdata, s_axi_rdata;
-    logic [3:0] s_axi_wstrb;
-    logic [1:0] s_axi_bresp, s_axi_rresp;
-    logic s_axi_bvalid, s_axi_bready, s_axi_arvalid, s_axi_arready;
-    logic s_axi_rvalid, s_axi_rready;
-
     logic [79:0] ebeat [0:MAXB-1];
 
     int e_sym [0:MAXE-1];
@@ -42,35 +34,6 @@ module tb_book_top();
 
     book_top DUT(.*);
 
-    task automatic axi_write(input logic [7:0] a, input logic [31:0] d);
-        @(posedge clk); #1;
-        s_axi_awaddr = a; s_axi_awvalid = 1'b1;
-        s_axi_wdata = d; s_axi_wstrb = 4'hF; s_axi_wvalid = 1'b1;
-        s_axi_bready = 1'b1;
-        @(negedge clk);
-        while (!(s_axi_awready && s_axi_wready)) @(negedge clk);
-        @(posedge clk); #1;
-        s_axi_awvalid = 1'b0; s_axi_wvalid = 1'b0;
-        @(negedge clk);
-        while (!s_axi_bvalid) @(negedge clk);
-        @(posedge clk); #1;
-        s_axi_bready = 1'b0;
-    endtask
-
-    task automatic axi_read(input logic [7:0] a, output logic [31:0] d);
-        @(posedge clk); #1;
-        s_axi_araddr = a; s_axi_arvalid = 1'b1; s_axi_rready = 1'b1;
-        @(negedge clk);
-        while (!s_axi_arready) @(negedge clk);
-        @(posedge clk); #1;
-        s_axi_arvalid = 1'b0;
-        @(negedge clk);
-        while (!s_axi_rvalid) @(negedge clk);
-        d = s_axi_rdata;
-        @(posedge clk); #1;
-        s_axi_rready = 1'b0;
-    endtask
-
     task automatic cmp(input string name, input longint a, input longint b);
         if (a !== b) begin
             if (errors < 15)
@@ -82,7 +45,6 @@ module tb_book_top();
     initial begin
         int fd, symv, blv, alv;
         longint bpv, bqv, apv, aqv;
-        logic [31:0] rv;
 
         $readmemh("eth_beats.hex", ebeat);
         while (n_eth < MAXB && !$isunknown(ebeat[n_eth])) n_eth++;
@@ -104,9 +66,6 @@ module tb_book_top();
 
         rst = 1; resync = 0; in_valid = 0; in_data = '0; in_keep = '0;
         in_last = 0; in_fcs_ok = 0;
-        s_axi_awvalid = 0; s_axi_wvalid = 0; s_axi_bready = 0;
-        s_axi_arvalid = 0; s_axi_rready = 0;
-        s_axi_awaddr = 0; s_axi_araddr = 0; s_axi_wdata = 0; s_axi_wstrb = 0;
         repeat (4) @(posedge clk);
         #1 rst = 0;
 
@@ -128,34 +87,6 @@ module tb_book_top();
             errors++;
         end
 
-        // the register block must show software the same book the datapath ended
-        // on, and the same counts the testbench watched go by
-        axi_write(8'h04, 32'h1);
-        axi_read(8'h00, rv);
-        if (rv !== 32'h424F_4F4B) begin
-            $error("axi id: got %08h expected 424F4F4B", rv);
-            errors++;
-        end
-        axi_read(8'h10, rv);
-        if (rv !== e_bp[n_exp-1]) begin
-            $error("axi bid_price: got %0d expected %0d", rv, e_bp[n_exp-1]);
-            errors++;
-        end
-        axi_read(8'h18, rv);
-        if (rv !== e_ap[n_exp-1]) begin
-            $error("axi ask_price: got %0d expected %0d", rv, e_ap[n_exp-1]);
-            errors++;
-        end
-        axi_read(8'h20, rv);
-        if (rv !== store_occupancy) begin
-            $error("axi orders: got %0d expected %0d", rv, store_occupancy);
-            errors++;
-        end
-        axi_read(8'h0C, rv);
-        if (rv !== got) begin
-            $error("axi bbo count: got %0d expected %0d", rv, got);
-            errors++;
-        end
         report_latency();
         $display("checked=%0d/%0d orders=%0d levels=%0d degraded=%0b errors=%0d",
                  got, n_exp, store_occupancy, lvl_occupancy, degraded, errors);

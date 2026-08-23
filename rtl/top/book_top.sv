@@ -25,24 +25,6 @@ module book_top #(
     input wire logic in_last,
     input wire logic in_fcs_ok,
 
-    input wire logic [7:0] s_axi_awaddr,
-    input wire logic s_axi_awvalid,
-    output logic s_axi_awready,
-    input wire logic [31:0] s_axi_wdata,
-    input wire logic [3:0] s_axi_wstrb,
-    input wire logic s_axi_wvalid,
-    output logic s_axi_wready,
-    output logic [1:0] s_axi_bresp,
-    output logic s_axi_bvalid,
-    input wire logic s_axi_bready,
-    input wire logic [7:0] s_axi_araddr,
-    input wire logic s_axi_arvalid,
-    output logic s_axi_arready,
-    output logic [31:0] s_axi_rdata,
-    output logic [1:0] s_axi_rresp,
-    output logic s_axi_rvalid,
-    input wire logic s_axi_rready,
-
     output logic bbo_valid,
     output logic [1:0] bbo_sym,
     output logic bid_live,
@@ -273,61 +255,9 @@ module book_top #(
 
     // every one of these means a delta was lost or never applied, and ITCH gives
     // no way to recover it from the live feed, so the flag is sticky until
-    // software has resynchronised from a snapshot
-    // software clears the flag through the register block once it has resynced
-    // from a snapshot, or through the resync port for a bench driven reset
-    logic axi_resync, clear_stale;
-    assign clear_stale = resync || axi_resync;
-
-    book_regs u_regs (
-        .clk(clk),
-        .rst(rst),
-        .s_axi_awaddr(s_axi_awaddr),
-        .s_axi_awvalid(s_axi_awvalid),
-        .s_axi_awready(s_axi_awready),
-        .s_axi_wdata(s_axi_wdata),
-        .s_axi_wstrb(s_axi_wstrb),
-        .s_axi_wvalid(s_axi_wvalid),
-        .s_axi_wready(s_axi_wready),
-        .s_axi_bresp(s_axi_bresp),
-        .s_axi_bvalid(s_axi_bvalid),
-        .s_axi_bready(s_axi_bready),
-        .s_axi_araddr(s_axi_araddr),
-        .s_axi_arvalid(s_axi_arvalid),
-        .s_axi_arready(s_axi_arready),
-        .s_axi_rdata(s_axi_rdata),
-        .s_axi_rresp(s_axi_rresp),
-        .s_axi_rvalid(s_axi_rvalid),
-        .s_axi_rready(s_axi_rready),
-        .bbo_valid(bbo_valid),
-        .bid_live(bid_live),
-        .bid_price(bid_price),
-        .bid_qty(bid_qty),
-        .ask_live(ask_live),
-        .ask_price(ask_price),
-        .ask_qty(ask_qty),
-        .book_stale(book_stale),
-        .degraded(degraded),
-        .store_occupancy(store_occupancy),
-        .lvl_occupancy(lvl_occupancy),
-        .gap_from(gap_from),
-        .gap_pulse(gap_pulse),
-        .dup_pulse(dup_pulse),
-        .drop_pulse(drop_pulse),
-        .pkt_bad(pkt_bad),
-        .rec_err(rec_err),
-        .rec_fifo_ovf(rec_fifo_ovf),
-        .lvl_fifo_ovf(lvl_fifo_ovf),
-        .store_ovf(store_ovf),
-        .store_miss(store_miss),
-        .store_dup(store_dup),
-        .lvl_ovf(lvl_ovf),
-        .lvl_miss(lvl_miss),
-        .resync(axi_resync)
-    );
-
+    // software has resynchronised from a snapshot, which the resync port drives
     always_ff @(posedge clk) begin
-        if (rst || clear_stale) book_stale <= 1'b0;
+        if (rst || resync) book_stale <= 1'b0;
         else if (gap_pulse || rec_fifo_ovf || lvl_fifo_ovf
                  || store_ovf || lvl_ovf) book_stale <= 1'b1;
     end
