@@ -1,10 +1,10 @@
 # FPGA Trading System
 
 A hardware path from 10 Gigabit Ethernet to a live top-of-book quote. Frames come
-in from the MAC, the best bid and offer for a watched symbol comes out **12 cycles
-(76.8 ns) after the message that moved it is complete in the fabric**, with zero
-jitter. No soft core anywhere on the path, and nothing is buffered a whole frame
-at a time.
+in from the MAC, the best bid and offer for a watched symbol comes out **14.6
+cycles (93 ns) after the last beat of the message that moved it, 16 cycles
+(102 ns) at worst**. No soft core anywhere on the path, and nothing is buffered a
+whole frame at a time.
 
 Target is a Kria KR260 (`xck26-sfvc784-2LV-c`) at 156.25 MHz, the clock a 10G MAC
 hands over on a 64-bit datapath. One cycle is 6.4 ns.
@@ -77,12 +77,13 @@ queue riding alongside the data.
 | Segment | Cycles | ns |
 |---|---|---|
 | CDC crossing, write accepted to read visible | 3 | 19.2 |
+| Frame's last beat to message complete in fabric | 1 to 3, avg 2.6 | 16.6 |
 | Message complete in fabric to level updated | 10 | 64.0 |
-| **Message complete in fabric to BBO updated** | **12** | **76.8** |
+| Message complete in fabric to BBO updated | 12 to 13, avg 12.0 | 76.8 |
+| **Frame's last beat to BBO updated** | **13 to 16, avg 14.6** | **93 avg, 102 worst** |
 
-Jitter on the last figure is zero cycles across the run. Nothing in the book half
-is data dependent while the FIFOs stay shallow, and at a four-cycle record
-spacing they stay empty.
+The three cycle spread is two in the header walk and one in the book half. The
+CDC crossing is measured on its own and is not in the total.
 
 ## Verification
 
