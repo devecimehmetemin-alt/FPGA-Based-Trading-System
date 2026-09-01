@@ -7,9 +7,13 @@ module tb_feed_top();
     logic clk = 0;
     always #5 clk = ~clk;
 
-    logic rst, in_valid, in_last, in_fcs_ok;
+    logic mac_clk = 0;
+    always #5.3 mac_clk = ~mac_clk;
+
+    logic rst, mac_rst, in_valid, in_last, in_fcs_ok;
     logic [63:0] in_data;
     logic [7:0] in_keep;
+    logic cdc_fifo_ovf;
     logic rec_valid, rec_side, rec_err, drop_pulse, pkt_bad;
     logic [7:0] rec_type;
     logic [15:0] rec_locate;
@@ -81,16 +85,18 @@ module tb_feed_top();
         $display("loaded %0d eth beats, %0d golden bytes, %0d records expected",
                  n_eth, n_gold, n_exp);
 
-        rst = 1; in_valid = 0; in_data = '0; in_keep = '0; in_last = 0; in_fcs_ok = 0;
+        rst = 1; mac_rst = 1; in_valid = 0; in_data = '0; in_keep = '0; in_last = 0; in_fcs_ok = 0;
         repeat (4) @(posedge clk);
         #1 rst = 0;
+        repeat (4) @(posedge mac_clk);
+        #1 mac_rst = 0;
 
         for (int i = 0; i < n_eth; i++) begin
-            @(posedge clk); #1;
+            @(posedge mac_clk); #1;
             {in_fcs_ok, in_last, in_keep, in_data} = ebeat[i][73:0];
             in_valid = 1;
         end
-        @(posedge clk); #1;
+        @(posedge mac_clk); #1;
         in_valid = 0; in_last = 0;
         repeat (20) @(posedge clk);
 
@@ -133,6 +139,10 @@ module tb_feed_top();
                 endcase
             end
             got++;
+        end
+        if (cdc_fifo_ovf) begin
+            if (errors < 10) $error("cdc_fifo_ovf asserted at record %0d", got);
+            errors++;
         end
         if (rec_err) begin
             if (errors < 10) $error("rec_err asserted at record %0d", got);

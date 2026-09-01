@@ -18,6 +18,8 @@ module book_top #(
 )(
     input wire logic clk,
     input wire logic rst,
+    input wire logic mac_clk,
+    input wire logic mac_rst,
     input wire logic resync,
     input wire logic in_valid,
     input wire logic [63:0] in_data,
@@ -43,6 +45,7 @@ module book_top #(
     output logic drop_pulse,
     output logic pkt_bad,
     output logic rec_err,
+    output logic cdc_fifo_ovf,
     output logic rec_fifo_ovf,
     output logic lvl_fifo_ovf,
     output logic store_ovf,
@@ -80,11 +83,14 @@ module book_top #(
     ) u_feed (
         .clk(clk),
         .rst(rst),
+        .mac_clk(mac_clk),
+        .mac_rst(mac_rst),
         .in_valid(in_valid),
         .in_data(in_data),
         .in_keep(in_keep),
         .in_last(in_last),
         .in_fcs_ok(in_fcs_ok),
+        .cdc_fifo_ovf(cdc_fifo_ovf),
         .rec_valid(rec_valid),
         .rec_type(rec_type),
         .rec_locate(rec_locate),
@@ -258,7 +264,7 @@ module book_top #(
     // software has resynchronised from a snapshot, which the resync port drives
     always_ff @(posedge clk) begin
         if (rst || resync) book_stale <= 1'b0;
-        else if (gap_pulse || rec_fifo_ovf || lvl_fifo_ovf
+        else if (gap_pulse || cdc_fifo_ovf || rec_fifo_ovf || lvl_fifo_ovf
                  || store_ovf || lvl_ovf) book_stale <= 1'b1;
     end
 

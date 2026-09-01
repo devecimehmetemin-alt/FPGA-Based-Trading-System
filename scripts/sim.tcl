@@ -14,12 +14,12 @@ set rtl(tb_axis_cdc_fifo) {rtl/common/axis_cdc_fifo.sv}
 set rtl(tb_mold_deframe)  {rtl/eth/mold_deframe.sv}
 set rtl(tb_itch_parse)    {rtl/itch/itch_parse.sv}
 set rtl(tb_symbol_filter) {rtl/itch/symbol_filter.sv}
-set rtl(tb_feed_top)      {rtl/eth/header_strip.sv rtl/eth/mold_deframe.sv rtl/itch/itch_parse.sv rtl/itch/symbol_filter.sv rtl/top/feed_top.sv}
+set rtl(tb_feed_top)      {rtl/common/axis_cdc_fifo.sv rtl/eth/header_strip.sv rtl/eth/mold_deframe.sv rtl/itch/itch_parse.sv rtl/itch/symbol_filter.sv rtl/top/feed_top.sv}
 set rtl(tb_sync_fifo)     {rtl/common/sync_fifo.sv}
 set rtl(tb_order_store)   {rtl/book/order_store.sv}
 set rtl(tb_price_level)   {rtl/book/price_level.sv}
 set rtl(tb_book_update)   {rtl/book/book_update.sv}
-set rtl(tb_book_top)      {rtl/eth/header_strip.sv rtl/eth/mold_deframe.sv rtl/itch/itch_parse.sv rtl/itch/symbol_filter.sv rtl/top/feed_top.sv rtl/common/sync_fifo.sv rtl/book/order_store.sv rtl/book/price_level.sv rtl/book/book_update.sv rtl/top/book_top.sv}
+set rtl(tb_book_top)      {rtl/common/axis_cdc_fifo.sv rtl/eth/header_strip.sv rtl/eth/mold_deframe.sv rtl/itch/itch_parse.sv rtl/itch/symbol_filter.sv rtl/top/feed_top.sv rtl/common/sync_fifo.sv rtl/book/order_store.sv rtl/book/price_level.sv rtl/book/book_update.sv rtl/top/book_top.sv}
 set rtl(tb_book_chain)    {rtl/common/sync_fifo.sv rtl/book/order_store.sv rtl/book/price_level.sv rtl/book/book_update.sv}
 
 set vec(tb_header_strip)  {eth_beats.hex mold_expect.hex eth_frames.txt}

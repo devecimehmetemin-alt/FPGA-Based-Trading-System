@@ -3,15 +3,19 @@
 module feed_top #(
     parameter logic [47:0] MCAST_MAC = 48'h01_00_5E_36_0C_6F,
     parameter logic [31:0] MCAST_IP = 32'hE9_36_0C_6F,
-    parameter logic [15:0] FEED_PORT = 16'd26477
+    parameter logic [15:0] FEED_PORT = 16'd26477,
+    parameter int CDC_FIFO_AW = 5
 )(
     input wire logic clk,
     input wire logic rst,
+    input wire logic mac_clk,
+    input wire logic mac_rst,
     input wire logic in_valid,
     input wire logic [63:0] in_data,
     input wire logic [7:0] in_keep,
     input wire logic in_last,
     input wire logic in_fcs_ok,
+    output logic cdc_fifo_ovf,
     output logic rec_valid,
     output logic [7:0] rec_type,
     output logic [15:0] rec_locate,
@@ -31,6 +35,10 @@ module feed_top #(
     output logic [15:0] gap_count,
     output logic dup_pulse
 );
+
+    logic cdc_valid, cdc_last, cdc_fcs_ok;
+    logic [63:0] cdc_data;
+    logic [7:0] cdc_keep;
 
     logic hs_valid, hs_last, hs_fcs_ok;
     logic [63:0] hs_data;
@@ -65,6 +73,29 @@ module feed_top #(
     // records go out unconditionally and pkt_bad is left as a status output. Bad
     // FCS is a 1e-12 event on a working link.
 
+    axis_cdc_fifo #(
+        .ADDR_W(CDC_FIFO_AW),
+        .DATA_W(64)
+    ) u_cdc_fifo (
+        .wr_clk(mac_clk),
+        .wr_reset(mac_rst),
+        .wr_valid(in_valid),
+        .wr_last(in_last),
+        .wr_fcs_ok(in_fcs_ok),
+        .wr_data(in_data),
+        .wr_keep(in_keep),
+        .wr_ready(),
+        .overflow(cdc_fifo_ovf),
+        .rd_clk(clk),
+        .rd_reset(rst),
+        .rd_ready(1'b1),
+        .rd_valid(cdc_valid),
+        .rd_last(cdc_last),
+        .rd_fcs_ok(cdc_fcs_ok),
+        .rd_keep(cdc_keep),
+        .rd_data(cdc_data)
+    );
+
     header_strip #(
         .MCAST_MAC(MCAST_MAC),
         .MCAST_IP(MCAST_IP),
@@ -72,11 +103,11 @@ module feed_top #(
     ) u_header_strip (
         .clk(clk),
         .rst(rst),
-        .in_valid(in_valid),
-        .in_data(in_data),
-        .in_keep(in_keep),
-        .in_last(in_last),
-        .in_fcs_ok(in_fcs_ok),
+        .in_valid(cdc_valid),
+        .in_data(cdc_data),
+        .in_keep(cdc_keep),
+        .in_last(cdc_last),
+        .in_fcs_ok(cdc_fcs_ok),
         .out_valid(hs_valid),
         .out_data(hs_data),
         .out_keep(hs_keep),

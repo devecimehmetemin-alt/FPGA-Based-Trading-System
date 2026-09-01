@@ -6,7 +6,10 @@ module tb_book_top();
     logic clk = 0;
     always #5 clk = ~clk;
 
-    logic rst, resync, in_valid, in_last, in_fcs_ok;
+    logic mac_clk = 0;
+    always #5.3 mac_clk = ~mac_clk;
+
+    logic rst, mac_rst, resync, in_valid, in_last, in_fcs_ok;
     logic [63:0] in_data;
     logic [7:0] in_keep;
     logic bbo_valid, bid_live, ask_live;
@@ -15,7 +18,7 @@ module tb_book_top();
     logic book_stale, degraded, gap_pulse, dup_pulse, drop_pulse, pkt_bad, rec_err;
     logic [63:0] gap_from;
     logic [15:0] gap_count;
-    logic rec_fifo_ovf, lvl_fifo_ovf, store_ovf, store_miss, store_dup;
+    logic cdc_fifo_ovf, rec_fifo_ovf, lvl_fifo_ovf, store_ovf, store_miss, store_dup;
     logic lvl_ovf, lvl_miss;
     logic [17:0] store_occupancy;
     logic [15:0] lvl_occupancy;
@@ -64,21 +67,23 @@ module tb_book_top();
         $fclose(fd);
         $display("loaded %0d eth beats, %0d expected bbo updates", n_eth, n_exp);
 
-        rst = 1; resync = 0; in_valid = 0; in_data = '0; in_keep = '0;
+        rst = 1; mac_rst = 1; resync = 0; in_valid = 0; in_data = '0; in_keep = '0;
         in_last = 0; in_fcs_ok = 0;
         repeat (4) @(posedge clk);
         #1 rst = 0;
+        repeat (4) @(posedge mac_clk);
+        #1 mac_rst = 0;
 
         // order_store walks 8192 sets clearing UltraRAM before it can accept
         // anything, so the feed cannot start at reset
         repeat (9000) @(posedge clk);
 
         for (int i = 0; i < n_eth; i++) begin
-            @(posedge clk); #1;
+            @(posedge mac_clk); #1;
             {in_fcs_ok, in_last, in_keep, in_data} = ebeat[i][73:0];
             in_valid = 1;
         end
-        @(posedge clk); #1;
+        @(posedge mac_clk); #1;
         in_valid = 0; in_last = 0;
         repeat (100) @(posedge clk);
 
@@ -121,10 +126,10 @@ module tb_book_top();
             end
             got++;
         end
-        if (rec_fifo_ovf || lvl_fifo_ovf) begin
+        if (cdc_fifo_ovf || rec_fifo_ovf || lvl_fifo_ovf) begin
             if (errors < 15)
-                $error("fifo overflow at bbo %0d: rec=%0b lvl=%0b",
-                       got, rec_fifo_ovf, lvl_fifo_ovf);
+                $error("fifo overflow at bbo %0d: cdc=%0b rec=%0b lvl=%0b",
+                       got, cdc_fifo_ovf, rec_fifo_ovf, lvl_fifo_ovf);
             errors++;
         end
         if (store_ovf || lvl_ovf || store_dup) begin
