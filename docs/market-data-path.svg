@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1974 400" width="1974" height="400">
+<defs>
+<marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1a1a1a"/></marker>
+<marker id="arwg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8a8a85"/></marker>
+</defs>
+<rect x="0" y="0" width="1974" height="400" fill="#fcfcfb"/>
+<text x="30" y="38" text-anchor="start" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="19" font-weight="800" fill="#1a1a1a">FPGA TRADING SYSTEM &#183; MARKET DATA PATH</text>
+<text x="30" y="60" text-anchor="start" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.5" font-weight="400" fill="#5f6368">10G MAC frames &#8594; header strip &#8594; MoldUDP64 &#8594; ITCH parse &#8594; hash-table book &#8594; BBO, 12 cycles at 156.25 MHz</text>
+<rect x="28" y="108" width="320" height="166" rx="10" fill="#2a78d6" fill-opacity="0.05" stroke="#2a78d6" stroke-width="1.4" stroke-dasharray="6,4"/>
+<text x="42.0" y="131" text-anchor="start" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="12.5" font-weight="700" fill="#2a78d6" letter-spacing="1.4">MAC + CDC  ·  mac_clk</text>
+<rect x="358" y="108" width="624" height="166" rx="10" fill="#eb6834" fill-opacity="0.05" stroke="#eb6834" stroke-width="1.4" stroke-dasharray="6,4"/>
+<text x="372.0" y="131" text-anchor="start" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="12.5" font-weight="700" fill="#eb6834" letter-spacing="1.4">FEED_TOP  ·  core_clk</text>
+<rect x="992" y="108" width="776" height="166" rx="10" fill="#1baf7a" fill-opacity="0.05" stroke="#1baf7a" stroke-width="1.4" stroke-dasharray="6,4"/>
+<text x="1006.0" y="131" text-anchor="start" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="12.5" font-weight="700" fill="#1baf7a" letter-spacing="1.4">BOOK_TOP  ·  core_clk</text>
+<path d="M 353 94 L 353 286" fill="none" stroke="#8a8a85" stroke-width="1.4" stroke-dasharray="5,5"/>
+<text x="353.0" y="86" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.6" font-weight="700" fill="#8a8a85">clock domain boundary</text>
+<rect x="46" y="166" width="132" height="78" rx="7" fill="#f4f4f2" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 53 168.5 L 171 168.5" stroke="#52514e" stroke-width="5" stroke-linecap="round"/>
+<text x="112.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">MAC RX</text>
+<text x="112.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">10G MAC, mac_clk</text>
+<text x="112.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">64-bit AXIS</text>
+<rect x="198" y="166" width="132" height="78" rx="7" fill="#ffffff" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 205 168.5 L 323 168.5" stroke="#2a78d6" stroke-width="5" stroke-linecap="round"/>
+<text x="264.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">axis_cdc_fifo</text>
+<text x="264.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">cut-through, gray ptr</text>
+<text x="264.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">32 × 74 bit</text>
+<rect x="376" y="166" width="132" height="78" rx="7" fill="#ffffff" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 383 168.5 L 501 168.5" stroke="#eb6834" stroke-width="5" stroke-linecap="round"/>
+<text x="442.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">header_strip</text>
+<text x="442.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">Eth / IPv4 / UDP</text>
+<text x="442.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">addr + port match</text>
+<rect x="528" y="166" width="132" height="78" rx="7" fill="#ffffff" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 535 168.5 L 653 168.5" stroke="#eb6834" stroke-width="5" stroke-linecap="round"/>
+<text x="594.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">mold_deframe</text>
+<text x="594.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">MoldUDP64, seq track</text>
+<text x="594.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">64 → 128 bit</text>
+<rect x="680" y="166" width="132" height="78" rx="7" fill="#ffffff" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 687 168.5 L 805 168.5" stroke="#eb6834" stroke-width="5" stroke-linecap="round"/>
+<text x="746.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">itch_parse</text>
+<text x="746.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">ITCH 5.0 fields</text>
+<text x="746.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">40-byte buffer</text>
+<rect x="832" y="166" width="132" height="78" rx="7" fill="#ffffff" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 839 168.5 L 957 168.5" stroke="#eb6834" stroke-width="5" stroke-linecap="round"/>
+<text x="898.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">symbol_filter</text>
+<text x="898.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">locate code / ticker</text>
+<text x="898.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">N_SYM = 1</text>
+<rect x="1010" y="166" width="132" height="78" rx="7" fill="#ffffff" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 1017 168.5 L 1135 168.5" stroke="#1baf7a" stroke-width="5" stroke-linecap="round"/>
+<text x="1076.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">sync_fifo</text>
+<text x="1076.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">records, FWFT</text>
+<text x="1076.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">203 bit × 32</text>
+<rect x="1162" y="166" width="132" height="78" rx="7" fill="#ffffff" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 1169 168.5 L 1287 168.5" stroke="#1baf7a" stroke-width="5" stroke-linecap="round"/>
+<text x="1228.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">order_store</text>
+<text x="1228.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">ref → resting order</text>
+<text x="1228.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">8192 sets × 16 ways</text>
+<rect x="1314" y="166" width="132" height="78" rx="7" fill="#ffffff" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 1321 168.5 L 1439 168.5" stroke="#1baf7a" stroke-width="5" stroke-linecap="round"/>
+<text x="1380.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">sync_fifo</text>
+<text x="1380.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">level deltas, FWFT</text>
+<text x="1380.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">56 bit × 32</text>
+<rect x="1466" y="166" width="132" height="78" rx="7" fill="#ffffff" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 1473 168.5 L 1591 168.5" stroke="#1baf7a" stroke-width="5" stroke-linecap="round"/>
+<text x="1532.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">price_level</text>
+<text x="1532.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">price → quantity</text>
+<text x="1532.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">4096 sets × 8 ways</text>
+<rect x="1618" y="166" width="132" height="78" rx="7" fill="#ffffff" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 1625 168.5 L 1743 168.5" stroke="#1baf7a" stroke-width="5" stroke-linecap="round"/>
+<text x="1684.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">book_update</text>
+<text x="1684.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">sorted ladder / side</text>
+<text x="1684.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">8 deep per side</text>
+<rect x="1796" y="166" width="132" height="78" rx="7" fill="#f4f4f2" stroke="#d9d8d4" stroke-width="1.4"/>
+<path d="M 1803 168.5 L 1921 168.5" stroke="#52514e" stroke-width="5" stroke-linecap="round"/>
+<text x="1862.0" y="198" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="11.4" font-weight="700" fill="#0b0b0b">BBO</text>
+<text x="1862.0" y="218" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e">best bid + offer</text>
+<text x="1862.0" y="234" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.2" font-weight="400" fill="#3f464e"></text>
+<path d="M 182 205 L 193 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 334 205 L 371 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 512 205 L 523 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 664 205 L 675 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 816 205 L 827 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 968 205 L 1005 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 1146 205 L 1157 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 1298 205 L 1309 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 1450 205 L 1461 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 1602 205 L 1613 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 1754 205 L 1791 205" fill="none" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#arw)"/>
+<path d="M 198 315 L 198 322 L 330 322 L 330 315" fill="none" stroke="#8a8a85" stroke-width="1.3"/>
+<text x="264.0" y="338" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.8" font-weight="700" fill="#5f6368">CDC crossing &#183; 3 cy &#183; 19.2 ns</text>
+<path d="M 528 315 L 528 322 L 1598 322 L 1598 315" fill="none" stroke="#8a8a85" stroke-width="1.3"/>
+<text x="1063.0" y="338" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.8" font-weight="700" fill="#5f6368">level updated &#183; 10 cy &#183; 64.0 ns</text>
+<path d="M 528 357 L 528 364 L 1928 364 L 1928 357" fill="none" stroke="#8a8a85" stroke-width="1.3"/>
+<text x="1228.0" y="380" text-anchor="middle" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.8" font-weight="700" fill="#5f6368">BBO updated &#183; 12 cy &#183; 76.8 ns</text>
+<path d="M 528 315 L 528 364" fill="none" stroke="#8a8a85" stroke-width="1.3" stroke-dasharray="4,4"/>
+<text x="516.0" y="347.0" text-anchor="end" font-family="'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace" font-size="9.8" font-weight="700" fill="#5f6368">message complete in fabric &#8594;</text>
+</svg>
